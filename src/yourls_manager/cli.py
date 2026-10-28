@@ -104,6 +104,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--url", help="base URL to check instead of a target's url")
 
     p = sub.add_parser(
+        "update",
+        parents=[common],
+        help="update core to the latest release and plugins to their newest commits, then build",
+    )
+    p.add_argument("--commit", action="store_true", help="commit the update with a summary")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--core-only", action="store_true", help="only update YOURLS core")
+    g.add_argument("--plugins-only", action="store_true", help="only update plugins")
+
+    p = sub.add_parser(
         "release",
         parents=[common],
         help="tag a release: v<yourls>-<rev>[-rc.<n>] with notes from the lock diff",
@@ -412,6 +422,12 @@ def _dispatch(args: argparse.Namespace) -> int:
         if not args.dry_run:
             move_marker(cfg, target.spec)  # files are deployed even if verify failed
         return EXIT_OK if ok else EXIT_ERROR
+
+    if cmd == "update":
+        from .update import update
+
+        update(cfg, commit=args.commit, core=not args.plugins_only, plugins=not args.core_only)
+        return EXIT_OK
 
     if cmd == "release":
         from .release import list_releases, release

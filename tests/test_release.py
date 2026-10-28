@@ -123,6 +123,7 @@ def test_release_flow(site, capsys):
     assert main([*S, "release", "--rc"]) == 0
     assert main([*S, "release", "--promote"]) == 0
     assert git(site, "rev-parse", "v1.0.0-1^{}") == git(site, "rev-parse", "v1.0.0-1-rc.2^{}")
+    assert git(site, "cat-file", "-p", "v1.0.0-1").splitlines()[1] == "type commit"
     assert main([*S, "release", "--promote"]) == 2  # already promoted
     assert main([*S, "release"]) == 2  # HEAD already released as v1.0.0-1
 
@@ -187,3 +188,16 @@ def test_accept_validated(site):
     (site / "site.toml").write_text(toml)
     with pytest.raises(UsageError, match="accept"):
         load_site(site)
+
+
+def test_update(site, capsys):
+    S = ["--site-dir", str(site)]
+    assert main([*S, "update", "--plugins-only"]) == 0
+    assert "everything is up to date" in capsys.readouterr().out
+    assert main([*S, "update", "--commit"]) == 0  # fake core has 1.1.0
+    out = capsys.readouterr().out
+    assert "YOURLS 1.0.0 -> 1.1.0" in out
+    assert git(site, "log", "-1", "--format=%s") == "Update YOURLS 1.0.0 -> 1.1.0"
+    assert git(site, "status", "--porcelain") == ""
+    assert main([*S, "update"]) == 0
+    assert "everything is up to date" in capsys.readouterr().out

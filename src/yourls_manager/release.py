@@ -184,7 +184,7 @@ def release(
         name = format_tag(cand.core_str, cand.rev)
         if commit_of(cfg.root, f"refs/tags/{name}"):
             raise UsageError(f"{name} already exists; the newest rc ({cand.name}) was released")
-        target_rev = cand.name
+        target_rev = commit_of(cfg.root, cand.name) or cand.name  # the commit, not the rc tag
     else:
         lock = load_lock(cfg.lock_file)
         if not lock.core:

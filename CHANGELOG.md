@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-28
+
+### Added
+
+- `ym update [--commit] [--core-only | --plugins-only]`: update core to the latest release and
+  plugins to their newest commits, build, and summarize (or commit) the changes.
+
+### Fixed
+
+- `ym release --promote` tagged the rc tag instead of its commit, so on older Git the final
+  tag wasn't seen at HEAD.
+
 ## [0.4.0] - 2026-10-28
 
 Releases and deploy policy.
@@ -116,7 +128,8 @@ Onboarding commands that work from the globally installed tool, before a site re
   JSON-on-stdout contract.
 - Redirect verification from `tests/redirects.toml` plus a JSON health check.
 
-[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/RubenFixit/yourls-manager/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/RubenFixit/yourls-manager/compare/v0.2.0...v0.2.1
