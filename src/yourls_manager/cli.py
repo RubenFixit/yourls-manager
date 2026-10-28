@@ -88,7 +88,129 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("plugins", parents=[common], help="apply the active plugin set on a target")
     p.add_argument("target")
+
+    _onboarding_parsers(sub, common)
     return parser
+
+
+def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
+    """Design §9: new, template-update, server-config, adopt, setup."""
+    fmt = argparse.RawDescriptionHelpFormatter
+    p = sub.add_parser(
+        "new",
+        parents=[common],
+        formatter_class=fmt,
+        help="create a site repo from the template (copier), vendor core + plugins, git init",
+        description=(
+            "Create a new site repo from yourls-site-template with Copier (run as `uvx copier`),\n"
+            "then vendor YOURLS core and plugins (ym core + ym sync), best-effort `uv lock`,\n"
+            "and make the initial git commit. DEST must be empty or not exist."
+        ),
+        epilog=(
+            "examples:\n"
+            "  ym new go-example-com\n"
+            "  ym new go-example-com --defaults --data site_name='Example Go Links' \\\n"
+            "      --data site_url=https://go.example.com\n"
+            "environment:\n"
+            "  YM_TEMPLATE   template source used when --template is not given\n"
+            "                (default: gh:RubenFixit/yourls-site-template)"
+        ),
+    )
+    p.add_argument("dest", nargs="?", default=".", metavar="DEST", help="new site directory")
+    p.add_argument("--template", metavar="SRC", help="template (path, git URL or gh:owner/repo)")
+    p.add_argument(
+        "--vcs-ref", metavar="REF", help="template git ref (default: its latest release tag)"
+    )
+    p.add_argument(
+        "--data",
+        action="append",
+        default=[],
+        metavar="K=V",
+        help="answer a template question (repeatable), e.g. site_url=https://go.example.com",
+    )
+    p.add_argument("--defaults", action="store_true", help="use defaults for unanswered questions")
+    p.add_argument("--no-vendor", action="store_true", help="skip `ym core` + `ym sync`")
+    p.add_argument("--no-git", action="store_true", help="skip git init and the initial commit")
+
+    p = sub.add_parser(
+        "template-update",
+        parents=[common],
+        help="pull template changes into this site repo (copier update)",
+        description=(
+            "Run `copier update` in a clean site repo, then best-effort `uv lock`, and show"
+            " what changed. Previously answered questions are not asked again."
+        ),
+    )
+    p.add_argument("--vcs-ref", metavar="REF", help="template git ref (default: latest tag)")
+    p.add_argument(
+        "--manager-version",
+        metavar="vX.Y.Z",
+        help="pin this yourls-manager tag in pyproject.toml (manager_version answer)",
+    )
+    p.add_argument("--defaults", action="store_true", help="accept defaults for new questions")
+
+    p = sub.add_parser(
+        "server-config",
+        parents=[common],
+        formatter_class=fmt,
+        help="create the server-local YOURLS config (secrets) on a target",
+        description=(
+            "Write the target's config_file (mode 0600) from server/config.example.php:\n"
+            "DB settings, YOURLS_SITE (the target's url), a fresh cookie key and one admin\n"
+            "user whose password is hashed by the target's PHP. With --from-existing, copy\n"
+            "the existing install's user/config.php instead (when adopting)."
+        ),
+        epilog=(
+            "secrets (never pass them as arguments):\n"
+            "  YM_DB_PASSWORD      database password (else prompted)\n"
+            "  YM_ADMIN_PASSWORD   admin password (else prompted twice)"
+        ),
+    )
+    p.add_argument("target")
+    p.add_argument(
+        "--force", action="store_true", help="replace an existing file (kept as .bak-<UTC>)"
+    )
+    p.add_argument(
+        "--from-existing",
+        action="store_true",
+        help="copy <web root>/user/config.php (or includes/config.php) to config_file",
+    )
+    p.add_argument("--db-host", metavar="H", help="YOURLS_DB_HOST (default: example's value)")
+    p.add_argument("--db-name", metavar="N", help="YOURLS_DB_NAME (prompted if omitted)")
+    p.add_argument("--db-user", metavar="U", help="YOURLS_DB_USER (prompted if omitted)")
+    p.add_argument("--db-prefix", metavar="P", help="YOURLS_DB_PREFIX (default: yourls_)")
+    p.add_argument("--admin-user", metavar="U", help="admin username (prompted if omitted)")
+
+    p = sub.add_parser(
+        "adopt",
+        parents=[common],
+        formatter_class=fmt,
+        help="bring an existing YOURLS install under management",
+        description=(
+            "Snapshot an existing install, vendor core at its version, copy site-specific\n"
+            "files and plugins into overlay/ (collisions with template files go to\n"
+            "adopt-review/), add [[plugins]] entries, and check build/install parity.\n"
+            "Writes adopt-review/REPORT.md. Run inside a site repo created by `ym new`."
+        ),
+    )
+    src = p.add_mutually_exclusive_group(required=True)
+    src.add_argument("--from-target", metavar="TARGET", help="pull the target's web root")
+    src.add_argument("--from-dir", type=Path, metavar="PATH", help="a local copy of the install")
+    p.add_argument(
+        "--ignore",
+        action="append",
+        default=[],
+        metavar="GLOB",
+        help="extra path glob to ignore (repeatable; added to the defaults)",
+    )
+    p.add_argument("--dry-run", action="store_true", help="analyze and print the plan only")
+
+    sub.add_parser(
+        "setup",
+        parents=[common],
+        help="interactive wizard: new site or adopt an existing install",
+        description="Guided onboarding (needs a terminal). Prints each equivalent command.",
+    )
 
 
 def _load(args: argparse.Namespace) -> SiteConfig:
@@ -101,6 +223,35 @@ def _load(args: argparse.Namespace) -> SiteConfig:
 
 def _dispatch(args: argparse.Namespace) -> int:
     cmd = args.command
+
+    if cmd == "new":
+        from .newsite import new_site
+
+        new_site(
+            Path(args.dest),
+            template=args.template,
+            vcs_ref=args.vcs_ref,
+            data=args.data,
+            defaults=args.defaults,
+            vendor=not args.no_vendor,
+            git_init=not args.no_git,
+        )
+        return EXIT_OK
+
+    if cmd == "template-update":
+        from .newsite import template_update
+
+        start = args.site_dir.resolve() if args.site_dir else None
+        template_update(
+            start,
+            vcs_ref=args.vcs_ref,
+            manager_version=args.manager_version,
+            defaults=args.defaults,
+        )
+        return EXIT_OK
+
+    if cmd == "setup":
+        return _setup()
 
     if cmd == "verify":
         from .verify import verify
@@ -180,7 +331,54 @@ def _dispatch(args: argparse.Namespace) -> int:
         get_target(cfg, args.target).apply_plugins()
         return EXIT_OK
 
+    if cmd == "server-config":
+        from .serverconfig import ServerConfigOptions, server_config
+
+        server_config(
+            cfg,
+            args.target,
+            ServerConfigOptions(
+                force=args.force,
+                from_existing=args.from_existing,
+                db_host=args.db_host,
+                db_name=args.db_name,
+                db_user=args.db_user,
+                db_prefix=args.db_prefix,
+                admin_user=args.admin_user,
+            ),
+        )
+        return EXIT_OK
+
+    if cmd == "adopt":
+        from .adopt import adopt
+
+        adopt(
+            cfg,
+            from_target=args.from_target,
+            from_dir=args.from_dir,
+            ignore=args.ignore,
+            dry_run=args.dry_run,
+        )
+        return EXIT_OK
+
     raise YMError(f"unknown command {cmd}")  # pragma: no cover
+
+
+def _setup() -> int:
+    from .wizard import run_wizard
+
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        raise UsageError(
+            "`ym setup` is interactive and needs a terminal; use `ym new`, `ym adopt`,"
+            " `ym server-config` and `ym deploy` directly"
+        )
+
+    def ask(question: str, default: str | None) -> str:
+        suffix = f" [{default}]" if default else ""
+        answer = input(f"{question}{suffix}: ")
+        return answer if answer.strip() else (default or "")
+
+    return run_wizard(ask, invoke=main).exit_code
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -192,7 +390,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except YMError as exc:
         console.error(str(exc))
         return exc.exit_code
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, EOFError):
         console.error("interrupted")
         return 130
     except OSError as exc:

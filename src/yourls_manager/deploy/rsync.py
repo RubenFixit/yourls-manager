@@ -59,7 +59,7 @@ class RsyncTarget(Target):
         return {"YOURLS_CONFIG_FILE": self.config_file}
 
     # ------------------------------------------------------------------ steps
-    def preflight(self, *, need_rsync: bool = True) -> None:
+    def preflight(self, *, need_rsync: bool = True, need_config: bool = True) -> None:
         if self._preflighted:
             return
         r = self.runner
@@ -78,6 +78,8 @@ class RsyncTarget(Target):
                 " (set [deploy.targets.<name>].php, e.g. /usr/local/php83/bin/php)"
             )
         console.info(f"  php {'.'.join(map(str, ver))} ({self.spec.php})")
+        if not need_config:
+            return
         if not r.exists(self.config_file, "-f"):
             raise UsageError(
                 f"server-local config not found: {self.config_file} on {r.describe()}\n"
@@ -111,9 +113,9 @@ class RsyncTarget(Target):
             )
         console.detail(self.helper_path)
 
-    def helper(self, command: str, *args: str) -> dict[str, Any]:
+    def helper(self, command: str, *args: str, env: dict[str, str] | None = None) -> dict[str, Any]:
         argv = [self.spec.php, self.helper_path, command, *args]
-        proc = self.runner.run(argv, env=self.helper_env, check=False)
+        proc = self.runner.run(argv, env=self.helper_env if env is None else env, check=False)
         stderr = proc.stderr.decode(errors="replace").strip()
         for line in stderr.splitlines():
             console.detail(f"helper: {line}")

@@ -27,8 +27,12 @@ def sync_plugins(
     update: bool = False,
     dry_run: bool = False,
     force: bool = False,
+    check_dirty: bool = True,
 ) -> dict[str, str]:
-    """Vendor managed plugins. Returns {name: action}."""
+    """Vendor managed plugins. Returns {name: action}.
+
+    ``check_dirty=False`` skips the Git dirty-tree guard (for a brand-new site repo).
+    """
     if not (cfg.vendor_dir / "includes").is_dir():
         raise UsageError("yourls/ has no core yet; run `ym core` first")
     lock = load_lock(cfg.lock_file)
@@ -80,7 +84,8 @@ def sync_plugins(
     if not work and not removals:
         console.info("plugins: everything up to date")
         return result
-    dirty_guard(cfg, force, plugin_pathspecs(cfg, [p.spec.name for p in work] + removals))
+    if check_dirty:
+        dirty_guard(cfg, force, plugin_pathspecs(cfg, [p.spec.name for p in work] + removals))
 
     # Stage everything first so a fetch failure leaves yourls/ untouched.
     checkout_root = gitsrc.temp_checkout_dir()

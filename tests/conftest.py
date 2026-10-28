@@ -145,3 +145,71 @@ def server():
     yield f"http://127.0.0.1:{httpd.server_address[1]}"
     httpd.shutdown()
     httpd.server_close()
+
+
+# --------------------------------------------------------------------------- onboarding (v0.2)
+
+YOURLS_CORE_URL = "https://github.com/YOURLS/YOURLS.git"
+
+
+def _find_template() -> Path | None:
+    import os
+
+    env = os.environ.get("YM_TEST_TEMPLATE")
+    if env:
+        return Path(env)
+    sibling = Path(__file__).resolve().parents[2] / "yourls-site-template"
+    return sibling if (sibling / "copier.yml").is_file() else None
+
+
+TEMPLATE_DIR = _find_template()
+needs_copier = pytest.mark.skipif(
+    TEMPLATE_DIR is None or shutil.which("uv") is None,
+    reason="needs uv (for `uvx copier`) and the yourls-site-template checkout"
+    " (sibling dir or YM_TEST_TEMPLATE)",
+)
+
+
+def git_insteadof(real_url: str, fake_url: str) -> None:
+    """Redirect ``real_url`` to ``fake_url`` for every git call (isolated global config)."""
+    import os
+
+    cfg = Path(os.environ["GIT_CONFIG_GLOBAL"])
+    with cfg.open("a") as fh:
+        fh.write(f'[url "{fake_url}"]\n\tinsteadOf = {real_url}\n')
+
+
+def new_site_args(dest: Path, *data: str) -> list[str]:
+    """argv for `ym new` from the local template with non-interactive answers."""
+    assert TEMPLATE_DIR is not None
+    argv = [
+        "new",
+        str(dest),
+        "--template",
+        str(TEMPLATE_DIR),
+        "--vcs-ref",
+        "HEAD",
+        "--defaults",
+        "--data",
+        "site_name=Test Links",
+        "--data",
+        "site_url=https://go.example.com",
+    ]
+    for d in data:
+        argv += ["--data", d]
+    return argv
+
+
+@pytest.fixture
+def no_uv_lock(monkeypatch):
+    """`uv lock` would try to fetch the pinned yourls-manager tag from GitHub."""
+    from yourls_manager import newsite
+
+    calls: list[Path] = []
+
+    def fake(site: Path) -> bool:
+        calls.append(site)
+        return False
+
+    monkeypatch.setattr(newsite, "uv_lock", fake)
+    return calls

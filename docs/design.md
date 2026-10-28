@@ -196,3 +196,64 @@ location = "https://..." # optional; exact match, or prefix match if endswith "*
 - Site pins: `[tool.uv.sources] yourls-manager = { git = "https://github.com/RubenFixit/yourls-manager", tag = "v0.1.0" }`.
 - Template update: `uvx copier update` in the site repo (answers in `.copier-answers.yml`).
 - Weekly CI in the site: `ym check`; if exit 10 → `ym sync --update` and/or `ym core --version latest` → PR.
+
+---
+
+## 9. Onboarding commands (v0.2)
+
+New top-level commands. All run with the globally installed tool
+(`uv tool install git+https://github.com/RubenFixit/yourls-manager`), so they work before a
+site repo (and its `uv.lock`) exists. Copier is invoked as a subprocess: `uvx copier` when `uv`
+is on PATH, else `copier` on PATH, else a UsageError explaining how to install uv. Copier stays
+out of runtime dependencies (stdlib-only rule).
+
+| Command | Behavior |
+|---|---|
+| `ym new [DEST] [--template SRC] [--vcs-ref REF] [--data K=V ...] [--defaults] [--no-vendor] [--no-git]` | Create a site repo from the template (default `gh:RubenFixit/yourls-site-template`, override with `--template` or env `YM_TEMPLATE`). Copier asks its questions interactively unless `--defaults`. Then, unless `--no-vendor`: `ym core` (version from site.toml) + `ym sync` in DEST. Unless `--no-git`: `git init -b main`, `git add -A`, initial commit "Create site from yourls-site-template" (skip with a warning if git identity is missing). Best-effort `uv lock` (warn on failure: e.g. the pinned yourls-manager tag isn't published yet). Ends by printing next steps (`ym server-config prod`, `ym deploy prod --dry-run`). Refuses a non-empty DEST. |
+| `ym template-update [--vcs-ref REF] [--manager-version vX.Y.Z] [--defaults]` | In a site repo: refuse if the git tree is dirty; run `copier update` (passing `--data manager_version=...` when given); best-effort `uv lock`; print `git diff --stat` and remind to review/commit. |
+| `ym server-config TARGET [--force] [--from-existing] [--db-host H] [--db-name N] [--db-user U] [--db-prefix P] [--admin-user U]` | Create the server-local config at the target's `config_file` from `server/config.example.php`: fills DB constants, `YOURLS_SITE` (site url), a fresh `YOURLS_COOKIEKEY` (`secrets.token_hex(32)`) and one admin user. Passwords come from env `YM_DB_PASSWORD` / `YM_ADMIN_PASSWORD` or `getpass` prompts (never argv). The admin password is hashed **on the target's PHP** (`phpass:` + `password_hash(PASSWORD_DEFAULT)` with `$`→`!`, the format YOURLS uses), passing the password on stdin. Written with mode 0600 via the runner; refuses to overwrite unless `--force` (then the old file is first copied to `<file>.bak-<UTCts>`). `--from-existing`: instead copy the existing install's config (`<web root>/user/config.php`, else `<web root>/includes/config.php`) to `config_file` — used when adopting; refuses if that file is itself the ym shim. Values replaced by regex on the `define( 'NAME', ... );` lines and the `$yourls_user_passwords` block; fail loudly if a placeholder line is not found. |
+| `ym adopt (--from-target TARGET \| --from-dir PATH) [--ignore GLOB ...] [--dry-run]` | Bring an existing, unmanaged YOURLS install under management, inside a site repo created by `ym new`. See below. |
+| `ym setup` | Interactive wizard (TTY only; exits 2 otherwise). Asks: new site or adopt existing install → destination dir → runs `ym new` (copier asks site questions; for adopt it passes `--data include_example_plugins=false`) → for adopt: source (the `prod` target if configured, or a local path) → `ym adopt` → offers `ym server-config prod` (`--from-existing` for adopt, when the config file is missing) → offers `ym deploy prod --dry-run` → prints a summary of what was done and what remains. Each step prints the equivalent command so users learn the non-interactive flow. |
+
+### `ym adopt` details
+
+1. **Snapshot**: `--from-dir` uses PATH directly; `--from-target` rsyncs the target's web root
+   into a temp dir (read-only on the server; excludes `--ignore` patterns), and runs the helper
+   `info` there to get `yourls_version` and `active_plugins` (requires the config — if
+   `config_file` is missing, the helper is pointed at the existing `user/config.php` via
+   `YOURLS_CONFIG_FILE`).
+2. **Version**: read `includes/version.php`; resolve the matching upstream tag (error listing
+   nearby tags if none). Write it to site.toml `[core].version` and vendor it with `ym core`.
+3. **Diff vs pristine core** (upstream tree at that tag, before `exclude`): for each file in the
+   snapshot outside `user/plugins/`, `user/config.php`, `includes/config.php`, and the ignore list
+   (defaults: `.well-known/**`, `**/error_log`, `**/*.log`, `**/.DS_Store`, `**/Thumbs.db`,
+   `.git/**`, `.htaccess` is NOT ignored):
+   - identical to upstream → nothing;
+   - modified or added → copy into `overlay/` at the same path, unless overlay already has a
+     template-owned file there (`.htaccess`, `health.php`, `user/config.php`, the
+     site-branding plugin): then write it to `adopt-review/<path>` for manual merge instead;
+   - upstream file missing from the snapshot → report only.
+4. **Plugins** (`user/plugins/*/plugin.php` in the snapshot):
+   - bundled with core at that tag and identical → ensure a `[[plugins]] name=... ` entry without
+     `repo` (only if active);
+   - anything else → copy as-is into `overlay/user/plugins/<name>/` (site-owned, exactly what
+     runs today) and append a `[[plugins]]` entry without `repo`, with a comment carrying the
+     header's `Plugin URI` as a hint for switching to a managed `repo=` later;
+   - `active` comes from the helper's `active_plugins` (target mode). In dir mode, if PHP and a
+     config are available locally the helper is used; otherwise every adopted plugin is written
+     `active = true` with a `# TODO verify` comment and a loud warning (deploy makes the active
+     set exactly site.toml's).
+   - site.toml plugins that are not present in the snapshot → warning listing them.
+   - site.toml is edited textually (append `[[plugins]]` blocks; update `[core].version` via the
+     existing `set_core_version`), preserving comments.
+5. **Verify parity**: build `dist/` and compare to the snapshot (same ignore rules, skipping the
+   config files): print counts of files that a deploy would add / change / delete, list them with
+   `-v`. Template-owned overlay files are expected to differ; everything else should be zero.
+6. **Report**: write `adopt-review/REPORT.md` (version, plugins + active flags, overlay files
+   added, files needing manual merge, parity summary, next steps). `adopt-review/` is never
+   deployed (it's outside `overlay/`) and is safe to commit or delete.
+7. `--dry-run`: do steps 1–3 analysis and print the plan; write nothing.
+
+Next steps printed: review `adopt-review/`, `ym server-config TARGET --from-existing` (if the
+target has no server-local config yet), `ym deploy TARGET --dry-run`, then deploy, then
+`ym core --version latest` + deploy to actually update the install.

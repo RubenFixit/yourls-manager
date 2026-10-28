@@ -1,54 +1,299 @@
 # yourls-manager
 
-`yourls-manager` (alias `ym`) keeps a whole [YOURLS](https://yourls.org) site in its own
-Git repository and deploys it with one command.
+`yourls-manager` (alias `ym`) keeps a whole [YOURLS](https://yourls.org) site in its own Git
+repository and deploys it with one command. YOURLS core and plugins are vendored at locked
+commits, your own files live in an overlay, and secrets stay on the server.
 
-- **Vendored and locked.** YOURLS core and third-party plugins are copied into `yourls/` at
-  exact commits. `yourls.lock.json` records each commit and a tree hash, so every build can be
-  reproduced and any hand edit shows up as drift.
-- **Site files stay separate.** Your own files (`.htaccess`, health check, config shim,
-  branding plugin, patches to vendored plugins) live in `overlay/`. At build time they are
-  copied over `yourls/`.
-- **One-command deploy.** `ym deploy prod` builds the site, backs up the database, rsyncs the
-  files, runs any YOURLS database upgrade, sets the exact active plugin list, records the
-  release and checks your redirects.
-- **No secrets in Git.** The real YOURLS config (DB credentials, cookie key, users) lives on
-  the server, outside the web root.
+## Quick start
 
-At runtime the tool needs only the Python 3.11+ standard library. On the server it needs
-PHP ≥ 8.1 with the CLI, `mysqldump` and `gzip`.
+### 1. Prerequisites
 
-Site repos are normally generated from the
-[`yourls-site-template`](https://github.com/RubenFixit/yourls-site-template) Copier template.
-The full design is in [`docs/design.md`](docs/design.md).
+On the machine you run `ym` from:
 
-## Install
+- **git**
+- **[uv](https://docs.astral.sh/uv/getting-started/installation/)** (it installs Python and
+  the tool for you)
+- **rsync** and **ssh** to deploy. Use Linux, macOS, WSL or CI (GitHub Actions). rsync
+  isn't native on Windows, so use WSL there.
 
-As a global tool, with [uv](https://docs.astral.sh/uv/):
+On the server:
+
+- **PHP ≥ 8.1** with the CLI, plus `mysqldump` and `gzip`
+- **MySQL or MariaDB**, with a database and user for YOURLS
+- SSH access with **key authentication** (`ym` never answers password prompts)
+
+### 2. Install the tool
 
 ```sh
 uv tool install git+https://github.com/RubenFixit/yourls-manager
 ym --version
+
+uv tool upgrade yourls-manager      # later, to update
 ```
 
-As a pinned dependency of a site repo (recommended; this is what the template does):
+### 3A. New site
+
+The easy way is the wizard. It asks a few questions and runs the steps below for you:
+
+```sh
+ym setup                            # choose "new site"
+```
+
+Or run the steps yourself:
+
+```sh
+ym new my-site                      # answer the template questions; vendors core + plugins, git init
+cd my-site
+ym server-config prod               # write the server-local config (DB, cookie key, admin user)
+ym deploy prod --dry-run            # build and show what rsync would change
+ym deploy prod                      # deploy for real
+```
+
+On the first deploy to an empty database, `ym` uploads the files and then asks you to open
+`https://<your site>/admin/install.php` once to create the tables. After that:
+
+```sh
+ym plugins prod                     # activate the plugins marked active in site.toml
+```
+
+If you leave the deploy host empty when `ym new` asks, the `prod` target is written to
+`site.toml` commented out. Uncomment and fill it in before `ym server-config prod`.
+
+### 3B. Adopt and update an existing YOURLS install
+
+`ym adopt` takes a YOURLS install that is already running and puts it under management
+without changing what's served. It finds the core version, copies your changed and extra
+files into `overlay/` and your plugins into `overlay/user/plugins/`, and checks that a build
+matches the live site.
+
+Wizard:
+
+```sh
+ym setup                            # choose "adopt existing install"
+```
+
+Or by hand:
+
+```sh
+ym new my-site --data include_example_plugins=false
+cd my-site
+# If you didn't give a deploy host to `ym new`, fill in [deploy.targets.prod] in site.toml now.
+ym adopt --from-target prod         # snapshot the live site; vendor its core version; fill overlay/
+less adopt-review/REPORT.md         # versions, plugins, files to merge by hand, parity summary
+ym server-config prod --from-existing   # copy the live config to the server-local location
+ym deploy prod --dry-run            # should show (almost) no changes
+ym deploy prod                      # parity deploy: same code the site runs today
+git add -A && git commit -m "Adopt existing install"
+```
+
+The first deploy should change nothing that matters. Only the template's own files differ:
+`.htaccess`, `health.php`, the `user/config.php` shim and the `site-branding` plugin. Merge
+anything listed under `adopt-review/` before you deploy. Then update:
+
+```sh
+ym check                            # what has updates (exit code 10 = updates available)
+ym core --version latest            # move YOURLS core to the newest release
+ym sync --update                    # move plugins to their newest commits
+git diff --stat                     # review
+git add -A && git commit -m "Update YOURLS"
+ym deploy prod                      # backs up the DB, deploys, runs the DB upgrade
+```
+
+`ym adopt --from-dir PATH` works on a local copy of the web root instead of a target.
+
+### DreamHost notes
+
+- **SSH user:** in the panel, give the site's user *SSH* (shell) access. Then install your
+  key with `ssh-copy-id user@server.dreamhost.com`, and connect once by hand so the host is in
+  `~/.ssh/known_hosts`.
+- **PHP CLI:** plain `php` is often older than the site's PHP. Set the target's `php` to a
+  versioned binary such as `/usr/local/php83/bin/php` (or `php82`, `php84`, ...).
+- **Web root:** the domain directory in your home, e.g. `path = "go.example.com"`. The server
+  config then goes to `~/yourls-config/<slug>.php` and backups to
+  `~/yourls-backups/<slug>/`, both outside the web root.
+- **Database host:** use the MySQL hostname you created in the panel (e.g.
+  `mysql.example.com`), e.g. `ym server-config prod --db-host mysql.example.com`.
+
+### Push to GitHub and deploy from CI
+
+Create an empty repository on GitHub (no README or license), then:
+
+```sh
+git remote add origin git@github.com:<you>/my-site.git
+git push -u origin main
+```
+
+The site repo's `.github/workflows/deploy.yml` deploys `prod` when you push a `v*` tag, or
+when you run it by hand. It runs in the `production` environment. Add these secrets to that
+environment (Settings → Environments → production):
+
+| Secret | Value |
+|---|---|
+| `DEPLOY_SSH_KEY` | private key (ed25519) whose public half is in `~/.ssh/authorized_keys` on the host |
+| `DEPLOY_KNOWN_HOSTS` | output of `ssh-keyscan -p <port> <host>` (check the fingerprint) |
+
+`.github/workflows/check-updates.yml` runs `ym check` every week and opens a pull request
+when there are updates. For that, enable *Allow GitHub Actions to create and approve pull
+requests* under Settings → Actions → General.
+
+## Updating an existing install
+
+**Routine updates** (the weekly `check-updates` pull request does steps 1 and 2 for you):
+
+1. `ym check`: see what's new upstream.
+2. `ym core --version latest` and/or `ym sync --update`: vendor the new versions.
+3. Review `git diff` (especially `yourls/` and `yourls.lock.json`) and commit.
+4. `ym deploy prod --dry-run`, then `ym deploy prod`. Or push a `v*` tag and let CI deploy.
+
+Each deploy dumps the database to `backup_dir` before it changes anything.
+
+**Rollback:** check out the last good tag and deploy it again:
+
+```sh
+git checkout v<previous> && ym deploy prod
+```
+
+If the database has to go back too, restore the dump taken before the bad deploy from
+`backup_dir` on the server (default `<parent of web root>/yourls-backups/<slug>/`):
+`gunzip -c <dump>.sql.gz | mysql --defaults-extra-file=<credentials file> <db>`.
+
+**Template updates** (workflows, config shim, `.htaccess`, ...): with a clean Git tree, run
+
+```sh
+ym template-update                          # pull the latest yourls-site-template changes
+ym template-update --manager-version v0.2.0 # also bump the yourls-manager pin in pyproject.toml
+```
+
+then review the diff and commit. Files you own (`site.toml`, `tests/redirects.toml`, branding
+assets) are never touched.
+
+**Tool updates:** `uv tool upgrade yourls-manager` updates the `ym` on your PATH. The site's
+CI uses the version pinned in the site's `pyproject.toml`. Bump that pin with
+`ym template-update --manager-version vX.Y.Z`.
+
+## Setup wizard
+
+`ym setup` is an interactive front end to the commands above. It needs a terminal (without
+one it exits with code 2). It:
+
+1. asks whether you're creating a **new site** or **adopting** an existing install, and
+   where to put the site repo;
+2. runs `ym new` (the template asks its questions; when adopting it passes
+   `--data include_example_plugins=false`);
+3. when adopting, asks for the source (the `prod` target if one is configured, or a local
+   path) and runs `ym adopt`;
+4. offers `ym server-config prod` (with `--from-existing` when adopting and the server-local
+   config doesn't exist yet);
+5. offers `ym deploy prod --dry-run`;
+6. prints a summary of what it did and what's left to do.
+
+Before each step it prints the equivalent command, so you can repeat or script the flow
+without the wizard.
+
+## Commands
+
+Global options: `--site-dir PATH` (default: search upward from the current directory for
+`site.toml`), `-v/--verbose`, `--version`.
+
+Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates available
+(`check` only).
+
+### Onboarding
+
+| Command | What it does |
+|---|---|
+| `ym setup` | Interactive wizard for a new site or an adoption (see [Setup wizard](#setup-wizard)). |
+| `ym new [DEST] [--template SRC] [--vcs-ref REF] [--data K=V ...] [--defaults] [--no-vendor] [--no-git]` | Create a site repo from the template. The default template is `gh:RubenFixit/yourls-site-template`; override it with `--template` or the `YM_TEMPLATE` environment variable. Copier asks its questions unless you pass `--defaults`. Then `ym new` runs `ym core` + `ym sync` (skip with `--no-vendor`), runs `git init -b main` and makes the first commit (skip with `--no-git`; skipped with a warning if no Git identity is set), and tries `uv lock`. Refuses a non-empty `DEST`. |
+| `ym template-update [--vcs-ref REF] [--manager-version vX.Y.Z] [--defaults]` | Run `copier update` in the site repo. Refuses if the Git tree is dirty. `--manager-version` also bumps the yourls-manager pin. Then it tries `uv lock` and prints `git diff --stat` for you to review and commit. |
+| `ym server-config TARGET [--force] [--from-existing] [--db-host H] [--db-name N] [--db-user U] [--db-prefix P] [--admin-user U]` | Create the server-local config at the target's `config_file` from `server/config.example.php`. It fills in the DB settings, `YOURLS_SITE`, a fresh `YOURLS_COOKIEKEY` and one admin user. Passwords come from `YM_DB_PASSWORD` / `YM_ADMIN_PASSWORD` or a prompt, never from the command line. The admin password is hashed by the target's PHP. The file is written with mode 0600. It won't overwrite an existing file unless you pass `--force`, which first keeps a copy as `<file>.bak-<UTC timestamp>`. `--from-existing` copies the live install's `user/config.php` (or `includes/config.php`) to `config_file` instead; use it when adopting. |
+| `ym adopt (--from-target TARGET \| --from-dir PATH) [--ignore GLOB ...] [--dry-run]` | Bring an existing YOURLS install under management, inside a repo made by `ym new`. See [below](#ym-adopt). |
+
+### Day-to-day
+
+| Command | What it does |
+|---|---|
+| `ym status` | Show the locked core version, each plugin (locked commit, active flag), and any drift: tree-hash mismatches, plugins in `site.toml` but not in the lock (or the reverse), and uncommitted Git changes under `yourls/`. |
+| `ym check [--json]` | Ask upstream (with `git ls-remote`) for the newest stable core tag (`-rc`/`-beta` tags are skipped) and each plugin ref's current commit. Exits **10** if anything can be updated. |
+| `ym core [--version V\|latest] [--dry-run] [--force]` | Fetch core at a tag and replace `yourls/`, keeping managed plugin dirs and applying `exclude`. Updates the lock and `[core].version`. |
+| `ym sync [--plugin NAME ...] [--update] [--dry-run] [--force]` | Vendor plugins into `yourls/user/plugins/<name>`. By default it uses the locked commit while the plugin's repo/ref/path are unchanged. `--update` re-resolves refs. A managed plugin that was removed from `site.toml` has its directory deleted. |
+| `ym build [--out DIR] [--allow-drift]` | Clean `dist/`, then copy `yourls/` and `overlay/` into it. Refuses to build if `yourls/` doesn't match the lock. `-v` lists each overlay override. |
+| `ym deploy TARGET [--dry-run] [--no-build] [--skip-backup] [--skip-verify]` | Build → preflight → upload helper → DB backup → rsync → DB upgrade → plugins → record → verify. `--dry-run` shows rsync's itemized changes and stops. |
+| `ym verify TARGET` / `ym verify --url URL` | Check `GET /health.php` (expects `{"ok": true}`), then each case in `tests/redirects.toml`. Redirects are not followed. |
+| `ym plugins TARGET` | Make the active plugin set on the target exactly the set marked `active` in `site.toml`. |
+
+`ym core` and `ym sync` won't overwrite vendored files that have uncommitted Git changes,
+because Git is your backup. Commit first or pass `--force`.
+
+`ym new`, `ym setup` and `ym template-update` run Copier as `uvx copier`, or as `copier` if
+uv isn't on your PATH.
+
+### `ym adopt`
+
+1. **Snapshot.** `--from-target` rsyncs the target's web root into a temp dir (read-only on
+   the server) and asks the PHP helper for the YOURLS version and the active plugins.
+   `--from-dir` uses a local directory.
+2. **Version.** Reads `includes/version.php`, finds the matching upstream tag, writes it to
+   `[core].version` and vendors it.
+3. **Diff against pristine core.** Files that match upstream are left alone. Modified or
+   added files are copied into `overlay/` at the same path. If the template already owns
+   that path (`.htaccess`, `health.php`, `user/config.php`, `site-branding`), the file goes to
+   `adopt-review/<path>` for you to merge by hand instead. Upstream files missing from the
+   site are only reported. The config files are skipped, and so are these defaults plus
+   anything you add with `--ignore`: `.well-known/**`, `**/error_log`, `**/*.log`,
+   `**/.DS_Store`, `**/Thumbs.db`, `.git/**`.
+4. **Plugins.** An unmodified plugin that ships with core gets a `[[plugins]]` entry without
+   `repo`. Any other plugin is copied as-is into `overlay/user/plugins/<name>/` and gets an
+   entry without `repo`, with its `Plugin URI` in a comment so you can switch to a managed
+   `repo =` later. The `active` flags come from the live site. With `--from-dir` and no local
+   PHP and config, every plugin is written `active = true` with a `# TODO verify` comment.
+   Check those flags, because a deploy makes the active set exactly what `site.toml` says.
+5. **Parity check.** Builds `dist/` and compares it to the snapshot. It prints how many
+   files a deploy would add, change or delete (`-v` lists them).
+6. **Report.** Writes `adopt-review/REPORT.md`. `adopt-review/` is never deployed and is
+   safe to commit or delete.
+
+`--dry-run` prints the plan and writes nothing.
+
+### Redirect tests
 
 ```toml
-# my-site/pyproject.toml
-[project]
-name = "my-site"
-version = "0"
-requires-python = ">=3.11"
-dependencies = ["yourls-manager"]
+# tests/redirects.toml
+[[case]]
+path = "/gh"
+status = 301
+location = "https://github.com/RubenFixit"
 
-[tool.uv.sources]
-yourls-manager = { git = "https://github.com/RubenFixit/yourls-manager", tag = "v0.1.0" }
+[[case]]
+path = "/docs/anything"
+status = [301, 302]
+location = "https://docs.example.com/*"   # trailing * = prefix match
 ```
 
-Then use `uv run ym ...` inside the site repo. To update the tool, change the tag and run
-`uv lock`.
+### What a deploy does
 
-## Site layout
+For `type = "rsync"`, commands run as `ssh -p PORT user@host -- <cmd>`. If you omit `host`,
+the same commands run on the local machine. Each step:
+
+1. **build** (skipped with `--no-build`)
+2. **preflight**: ssh works with key auth (`BatchMode`), PHP CLI is ≥ 8.1, rsync is present,
+   and `config_file` exists. If the config file is missing, `ym` points you to
+   `ym server-config` and exits with code 2.
+3. **upload helper**: `ym-helper.php` goes to `~/.yourls-manager/ym-helper-<version>.php`,
+   outside the web root.
+4. **backup**: `mysqldump --single-transaction | gzip` into `backup_dir`, keeping the newest
+   `backup_keep` dumps. This is skipped automatically when the database has no tables yet.
+5. **rsync**: `rsync -az --delete --delay-updates` of `dist/` into the web root. Paths listed in
+   `protect` are never deleted.
+6. **db upgrade**: runs YOURLS' own upgrade routine, and does nothing if no upgrade is needed.
+7. **plugins**: activates and deactivates plugins until the active set is exactly the
+   `site.toml` set.
+8. **record**: writes `~/.yourls-manager/<slug>/release.json` (git commit, dirty flag, tool
+   version, lock sha256, core version, time), outside the web root.
+9. **verify** (skipped with `--skip-verify`).
+
+## Concepts
+
+### Site repo layout
 
 ```
 my-site/
@@ -56,8 +301,10 @@ my-site/
 ├── yourls.lock.json    # written by ym: exact core + plugin commits and tree hashes
 ├── yourls/             # vendored upstream code, owned by ym; never edit by hand
 ├── overlay/            # your files, copied over yourls/ at build time (overlay wins)
-├── server/config.example.php
+├── server/config.example.php   # starting point for the server-local config
 ├── tests/redirects.toml
+├── adopt-review/       # only after `ym adopt`; never deployed
+├── pyproject.toml      # pins the yourls-manager version CI uses
 └── dist/               # build output (gitignored)
 ```
 
@@ -95,111 +342,37 @@ protect = [".well-known/"]
 Markdown files (use `**/*.md` to match at every level). `LICENSE` and `readme.html` are kept
 unless you list them by exact name.
 
-To patch a vendored plugin, put the changed files in `overlay/user/plugins/<name>/...`. Don't
-edit `yourls/`.
+### Who owns what
 
-## Commands
+| Where | Owner | Changed by |
+|---|---|---|
+| `yourls/`, `yourls.lock.json` | `ym` | `ym core`, `ym sync`, `ym adopt` only. Never edit by hand; `ym status` shows drift. |
+| `overlay/` | you (some files come from the template) | You, `ym adopt`, and `ym template-update` for the template's files. To patch a vendored plugin, put the changed files in `overlay/user/plugins/<name>/`. |
+| `site.toml`, `tests/redirects.toml` | you | You (`ym core` and `ym adopt` update `[core].version` and append plugins, keeping your comments). |
+| Server-local config | the server | `ym server-config`. It's never in Git. |
 
-Global options: `--site-dir PATH` (default: search upward from the current directory for
-`site.toml`), `-v/--verbose`, `--version`.
+The server-local config holds the DB credentials, cookie key and users. By default it lives
+at `<parent of web root>/yourls-config/<slug>.php`. The `overlay/user/config.php` shim
+loads it. When `ym` runs the helper, it sets `YOURLS_CONFIG_FILE` to the target's
+`config_file`, and the shim reads that variable first. If you use a non-default
+`config_file`, tell the web server too, for example with
+`SetEnv YOURLS_CONFIG_FILE /home/you/...` in `overlay/.htaccess`.
 
-| Command | What it does |
-|---|---|
-| `ym status` | Show the locked core version, each plugin (locked commit, active flag), and any drift: tree-hash mismatches, plugins in `site.toml` but not in the lock (or the reverse), and uncommitted Git changes under `yourls/`. |
-| `ym check [--json]` | Ask upstream (with `git ls-remote`) for the newest stable core tag (`-rc`/`-beta` tags are skipped) and each plugin ref's current commit. Exits **10** if anything can be updated. |
-| `ym core [--version V\|latest] [--dry-run] [--force]` | Fetch core at a tag and replace `yourls/`, keeping managed plugin dirs and applying `exclude`. Updates the lock and `[core].version`. |
-| `ym sync [--plugin NAME ...] [--update] [--dry-run] [--force]` | Vendor plugins into `yourls/user/plugins/<name>`. By default it uses the locked commit while the plugin's repo/ref/path are unchanged. `--update` re-resolves refs. A managed plugin that was removed from `site.toml` has its directory deleted. |
-| `ym build [--out DIR] [--allow-drift]` | Clean `dist/`, then copy `yourls/` and `overlay/` into it. Refuses to build if `yourls/` doesn't match the lock. `-v` lists each overlay override. |
-| `ym deploy TARGET [--dry-run] [--no-build] [--skip-backup] [--skip-verify]` | Build → preflight → upload helper → DB backup → rsync → DB upgrade → plugins → record → verify. `--dry-run` shows rsync's itemized changes and stops. |
-| `ym verify TARGET` / `ym verify --url URL` | Check `GET /health.php` (expects `{"ok": true}`), then each case in `tests/redirects.toml`. Redirects are not followed. |
-| `ym plugins TARGET` | Make the active plugin set on the target exactly the set marked `active` in `site.toml`. |
+### Passwords are stored pre-hashed
 
-`ym core` and `ym sync` won't overwrite vendored files that have uncommitted Git changes,
-because Git is your backup. Commit first or pass `--force`.
+YOURLS normally rewrites plaintext passwords in its config file into hashes. Here,
+YOURLS's config file is the shim, and the shim must never be modified on the server. So the
+shim sets `YOURLS_NO_HASH_PASSWORD`, and a plaintext password would stay plaintext. Instead,
+`ym server-config` writes the YOURLS hash format directly (`phpass:` + `password_hash()` with
+`$` written as `!`), using the target's own PHP. To add users by hand, see the comment in
+`server/config.example.php`.
 
-Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates available
-(`check` only).
+### `ym` vs `uv run ym`
 
-### Redirect tests
-
-```toml
-# tests/redirects.toml
-[[case]]
-path = "/gh"
-status = 301
-location = "https://github.com/RubenFixit"
-
-[[case]]
-path = "/docs/anything"
-status = [301, 302]
-location = "https://docs.example.com/*"   # trailing * = prefix match
-```
-
-### What a deploy does
-
-For `type = "rsync"`, commands run as `ssh -p PORT user@host -- <cmd>`. If you omit `host`,
-the same commands run on the local machine. Each step:
-
-1. **build** (skipped with `--no-build`)
-2. **preflight**: ssh works with key auth (`BatchMode`), PHP CLI is ≥ 8.1, rsync is present,
-   and `config_file` exists. If the config file is missing, `ym` explains how to create it
-   from `server/config.example.php` and exits with code 2.
-3. **upload helper**: `ym-helper.php` goes to `~/.yourls-manager/ym-helper-<version>.php`,
-   outside the web root.
-4. **backup**: `mysqldump --single-transaction | gzip` into `backup_dir`, keeping the newest
-   `backup_keep` dumps. This is skipped automatically when the database has no tables yet.
-5. **rsync**: `rsync -az --delete --delay-updates` of `dist/` into the web root. Paths listed in
-   `protect` are never deleted.
-6. **db upgrade**: runs YOURLS' own upgrade routine, and does nothing if no upgrade is needed.
-7. **plugins**: activates and deactivates plugins until the active set is exactly the
-   `site.toml` set.
-8. **record**: writes `~/.yourls-manager/<slug>/release.json` (git commit, dirty flag, tool
-   version, lock sha256, core version, time), outside the web root.
-9. **verify** (skipped with `--skip-verify`).
-
-On the very first deploy, YOURLS isn't installed in the database yet. `ym` uploads the files,
-then tells you to open `https://your.site/admin/install.php`. After installing, run
-`ym plugins TARGET`.
-
-**Rollback** in v0.1 is manual: check out the previous Git tag and run `ym deploy` again. If
-the database needs to go back too, restore a dump from `backup_dir`
-(`gunzip -c dump.sql.gz | mysql ...`).
-
-When `ym` runs the helper, it sets `YOURLS_CONFIG_FILE` to the target's `config_file`. The
-template's `user/config.php` shim reads that variable first. Otherwise the shim falls back to
-`<parent of web root>/yourls-config/<slug>.php`. If you use a non-default `config_file`, also
-tell the web server about it, for example `SetEnv YOURLS_CONFIG_FILE /home/you/...` in
-`overlay/.htaccess`.
-
-## DreamHost notes
-
-- **SSH:** in the panel, set the site's user to *SSH* (shell) access. Then add your public
-  key with `ssh-copy-id user@server.dreamhost.com`. `ym` uses `BatchMode=yes`, so password
-  prompts aren't possible. Add the host to `~/.ssh/known_hosts` once, by connecting
-  interactively or with `ssh-keyscan`.
-- **PHP CLI:** plain `php` on DreamHost is often an older version than the site's PHP. Point
-  `php` at a versioned binary such as `/usr/local/php83/bin/php` (or `php82`, `php84`, ...).
-- **Paths:** web roots live in your home directory as `~/<domain>`, so use
-  `path = "go.example.com"`. The defaults then put the server config at
-  `~/yourls-config/<slug>.php` and the backups at `~/yourls-backups/<slug>/`, both outside
-  the web root.
-- **Database host:** DreamHost MySQL hostnames such as `mysql.example.com` work as-is in
-  `YOURLS_DB_HOST`. The `host:port` and `host:/path/to/socket` forms work too.
-- **Where to run `ym deploy` from:** Linux, macOS, WSL, or GitHub Actions. rsync isn't native
-  on Windows. Use WSL there, or let CI deploy.
-
-### Deploying from GitHub Actions
-
-```yaml
-- uses: actions/checkout@v4
-- uses: astral-sh/setup-uv@v6
-- name: SSH key
-  run: |
-    install -m 700 -d ~/.ssh
-    echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
-    echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
-- run: uv run ym deploy prod
-```
+The globally installed `ym` runs every command, including `ym new` and `ym setup`, which
+have to work before a site repo exists. Each site repo also pins a yourls-manager version in
+its `pyproject.toml`. `uv run ym ...` inside the repo uses that pinned version, and so does
+CI.
 
 ## Development
 
@@ -212,6 +385,9 @@ uv run pytest
 Tests that need `rsync` or `php` are skipped if those tools are missing. To run the helper
 against a real, installed YOURLS (`mysql` marker), set `YM_TEST_YOURLS_ROOT` to its web root
 and `YM_TEST_YOURLS_CONFIG` to its config file.
+
+The full design is in [`docs/design.md`](docs/design.md). The site template lives in
+[`yourls-site-template`](https://github.com/RubenFixit/yourls-site-template).
 
 ## License
 
