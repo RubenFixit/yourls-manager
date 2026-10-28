@@ -257,3 +257,102 @@ out of runtime dependencies (stdlib-only rule).
 Next steps printed: review `adopt-review/`, `ym server-config TARGET --from-existing` (if the
 target has no server-local config yet), `ym deploy TARGET --dry-run`, then deploy, then
 `ym core --version latest` + deploy to actually update the install.
+
+---
+
+## 10. SFTP targets (v0.3)
+
+Goal: deploy and adopt sites where SSH *shell* access (rsync, PHP CLI) is not available but
+SFTP is. Plugin management through YOURLS is out of scope (YOURLS has no built-in API for
+it); a small companion plugin is a possible later step (see 10.7).
+
+### 10.1 Target schema
+
+```toml
+[deploy.targets.prod]
+type   = "sftp"
+host   = "ssh.example.com"
+user   = "ruben"
+port   = 22
+path   = "go.example.com"                  # web root, relative to the SFTP login dir (or absolute)
+config_file = "yourls-config/<slug>.php"   # default "<parent of path>/yourls-config/<slug>.php"
+state_dir   = ".yourls-manager/<slug>"     # default "<parent of path>/.yourls-manager/<slug>"
+protect = [".well-known/"]
+url = "https://go.example.com"
+```
+`php`, `backup_dir`, `backup_keep` do not apply (warn if set). Paths use the same validation
+as rsync targets.
+
+### 10.2 Connection (`transport/sftp.py`)
+
+- paramiko (new runtime dependency, imported lazily so other commands don't load it).
+- Honors `~/.ssh/config` for the host (HostName, Port, User, IdentityFile) when the target
+  doesn't override them.
+- Host keys: `~/.ssh/known_hosts`. Unknown host: on a TTY show the SHA256 fingerprint and ask
+  to trust it (then append to known_hosts); otherwise fail with instructions (CI provides
+  known_hosts). Changed host key: always fail.
+- Auth order: ssh-agent, IdentityFile / default keys, then password from env
+  `YM_<TARGET>_PASSWORD` (TARGET upper-cased, non-alnum → `_`) or, on a TTY, a `getpass`
+  prompt (asked once per command). Passwords are never stored by ym.
+- Transport interface used by deploy/adopt/server-config: `stat`, `listdir`, `walk`,
+  `read_bytes`, `write_bytes(path, data, mode)` and `upload(local, remote)` (both atomic:
+  `.<name>.ym-tmp` then `posix_rename`, falling back to remove+rename), `download`, `mkdirs`,
+  `remove`, `rmdir`, `chmod`, `home`/`normalize`.
+
+### 10.3 Deploy (`deploy/sftp.py`, `SftpTarget`)
+
+No rsync, so ym tracks what it deployed in a manifest outside the web root:
+`<state_dir>/manifest.json` = `{tool_version, deployed_at, git_commit, core_version, files:
+{relpath: {sha256, size}}}`; `release.json` alongside (same fields as rsync's minus files).
+
+1. build (unless `--no-build`); connect; preflight: web root reachable/creatable,
+   `config_file` exists (else point to `ym server-config TARGET`).
+2. plan: local manifest of `dist/` vs remote manifest:
+   - upload new files and files whose sha256 differs (no remote manifest: upload all);
+   - delete files listed in the remote manifest that are no longer in `dist/` and not
+     `protect`ed. Files ym never deployed are never deleted (unlike rsync `--delete`); with no
+     manifest nothing is deleted and ym says so.
+   - `--verify-remote`: stat every manifest file; a size mismatch means someone changed the
+     server: warn and re-upload.
+3. `--dry-run`: print the plan (counts; file lists with `-v`) and stop.
+4. upload (atomic per file; `.htaccess`, `user/config.php`, `yourls-loader.php` last), deletes,
+   remove directories that became empty and aren't in `dist/`, write manifest + release.json.
+5. YOURLS state over HTTP (no PHP on the server): request `<url>/` without following
+   redirects; a redirect to `admin/install.php` or `admin/upgrade.php` means install/upgrade is
+   needed → print the URL to open. Always print the plugins that site.toml marks active with a
+   link to `admin/plugins.php` (ym can't verify activation). Then verify (unchanged).
+`--skip-backup` is accepted and ignored; ym prints that SFTP deploys don't back up the DB
+(use the host's backup tool) once per deploy.
+
+### 10.4 Adopt / server-config / ssh-setup over SFTP
+
+- `ym adopt --from-target T`: snapshot by recursive SFTP download of the web root (ignore
+  patterns applied while walking). Active plugins can't be read: `--active a,b,...`; else on a
+  TTY ask per plugin found; else `active = true  # TODO verify` + warning (existing behavior).
+  After a non-dry adopt, upload the snapshot's manifest to state_dir so the first deploy only
+  sends real differences (and may delete files that belonged to the adopted install).
+  `--active` also works for rsync targets.
+- `ym server-config T`: same content; written over SFTP with chmod 600. The admin password is
+  hashed locally with `bcrypt` (new dependency; cost 10) as `phpass:` + hash with `$2b$`→`$2y$`
+  and `$`→`!` (verified with PHP `password_verify` and YOURLS `yourls_check_password_hash`).
+  `--from-existing`: download the live `user/config.php` and upload it to `config_file`.
+- `ym ssh-setup T` for sftp targets: test with an SFTP connection (not a shell command, since
+  SFTP-only accounts have no shell); to install a key, connect with the password and append
+  the public key to `.ssh/authorized_keys` over SFTP (creating `.ssh` 700 / file 600).
+
+### 10.5 Template and wizard
+
+- `copier.yml`: new question `deploy_type` (`rsync` | `sftp`, default rsync); `php_binary` only
+  asked for rsync. `site.toml.jinja` renders and documents the sftp target.
+- `ym setup`: the SSH step uses the sftp-aware check; after a deploy preview it lists the
+  manual admin steps for sftp targets.
+
+### 10.6 Docs
+
+README: SFTP target section, how deletes differ from rsync, manual admin steps, no DB backup.
+
+### 10.7 Later: companion plugin (idea, not built)
+
+A minimal plugin that writes YOURLS state into a JSON file in state_dir whenever it changes
+(hooks like `activated_plugin` / `deactivated_plugin`, plus on version change): active
+plugins, YOURLS version, DB version. ym would read it over SFTP for adopt/status/deploy checks.

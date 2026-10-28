@@ -158,6 +158,8 @@ def new_site(
     console.info("  ym server-config prod          # create the server-local config (secrets)")
     console.info("  ym deploy prod --dry-run       # preview the first deploy")
     console.info("  ym deploy prod")
+    if prod and cfg.targets["prod"].is_sftp:
+        console.info("  # sftp target: ym prints the browser steps (install/upgrade page, plugins)")
     console.info("Adopting an existing YOURLS install instead? `ym adopt --from-target prod`")
     return dest
 

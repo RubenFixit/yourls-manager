@@ -12,11 +12,10 @@ from typing import Any
 from .. import __version__
 from ..build import build_site
 from ..config import REDIRECTS_FILE, SiteConfig, TargetSpec, join_remote
-from ..lockfile import load_lock, lock_sha256
 from ..remote import Runner, runner_for
-from ..util import UsageError, YMError, compact_utc, console, iso_utc, run
+from ..util import UsageError, YMError, compact_utc, console, run
 from ..verify import verify
-from .base import DeployOptions, Target
+from .base import DeployOptions, Target, release_info
 
 MIN_PHP = (8, 1)
 STATE_DIR = ".yourls-manager"
@@ -194,20 +193,7 @@ class RsyncTarget(Target):
 
     def record(self, extra: dict[str, Any] | None = None) -> dict[str, Any]:
         console.step("record release")
-        lock = load_lock(self.cfg.lock_file)
-        commit = run(["git", "rev-parse", "HEAD"], cwd=self.cfg.root, check=False)
-        status = run(["git", "status", "--porcelain"], cwd=self.cfg.root, check=False)
-        release = {
-            "site": self.cfg.site.slug,
-            "target": self.spec.name,
-            "git_commit": commit.stdout.decode().strip() if commit.returncode == 0 else None,
-            "git_dirty": bool(status.stdout.strip()) if status.returncode == 0 else None,
-            "tool_version": __version__,
-            "lock_sha256": lock_sha256(self.cfg.lock_file),
-            "core_version": lock.core.version if lock.core else None,
-            "deployed_at": iso_utc(),
-            **(extra or {}),
-        }
+        release = {**release_info(self.cfg, self.spec), **(extra or {})}
         self.runner.mkdir(self.runner.abspath(join_remote(STATE_DIR, self.cfg.site.slug)))
         data = (json.dumps(release, indent=2, sort_keys=True) + "\n").encode()
         self.runner.write_file(self.release_file, data, "0600")

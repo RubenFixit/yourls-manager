@@ -7,8 +7,11 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Ruben Kackstaetter" }]
 requires-python = ">=3.11"
-dependencies = []
-keywords = ["yourls", "url-shortener", "deploy", "rsync", "php"]
+dependencies = [
+    "bcrypt>=5.0.0",
+    "paramiko>=5.1.0",
+]
+keywords = ["yourls", "url-shortener", "deploy", "rsync", "sftp", "php"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -62,4 +65,5 @@ markers = [
     "php: needs a php CLI on PATH",
     "mysql: needs a reachable MySQL/MariaDB server (opt-in via env)",
     "rsync: needs rsync on PATH",
+    "sftp: needs root + /usr/sbin/sshd (starts a real OpenSSH server on 127.0.0.1)",
 ]

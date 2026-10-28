@@ -173,14 +173,6 @@ TEMPLATE_OVERLAY = {
 }
 
 
-@pytest.fixture
-def fake_core(upstream):
-    core = upstream("core")
-    core.commit(core_files("1.0.0"), tag="1.0.0")
-    core.commit(core_files("1.1.0"), tag="1.1.0")
-    return core
-
-
 def make_site(tmp_path: Path, core_url: str, targets: str = "", version: str = "1.1.0") -> Path:
     site = tmp_path / "site"
     write_files(

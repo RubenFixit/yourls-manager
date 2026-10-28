@@ -7,9 +7,11 @@ from __future__ import annotations
 
 from .base import DeployOptions, Target
 from .rsync import RsyncTarget
+from .sftp import SftpTarget
 
 TARGET_TYPES: dict[str, type[Target]] = {
     "rsync": RsyncTarget,
+    "sftp": SftpTarget,
 }
 
 __all__ = ["TARGET_TYPES", "DeployOptions", "Target", "get_target"]

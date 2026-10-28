@@ -171,14 +171,21 @@ def default_config_exists(site: Path, target: str) -> bool:
 
     cfg = load_site(site)
     spec = cfg.target(target)
+    if spec.is_sftp:
+        from .transport.sftp import SftpTransport
+
+        with SftpTransport.for_target(spec) as t:
+            return t.is_file(t.abspath(spec.config_file))
     runner = runner_for(spec)
     return runner.exists(runner.abspath(spec.config_file), "-f")
 
 
 def default_ssh_ok(site: Path, target: str) -> bool:
+    """Login works non-interactively (sftp targets: an SFTP session; a password from
+    ``YM_<TARGET>_PASSWORD`` counts)."""
     from .sshsetup import check_ssh
 
-    return check_ssh(load_site(site).target(target)).ok
+    return check_ssh(load_site(site).target(target), password=True).ok
 
 
 def _cmd(argv: Sequence[str]) -> str:
@@ -294,10 +301,18 @@ def run_wizard(
     if remote_prod and not ssh_ok(dest, TARGET):
         ssh_argv = [*site, "ssh-setup", TARGET]
         console.info("")
-        console.info(
-            f"ym needs SSH key authentication to {_describe(cfg.targets[TARGET])}"
-            " (it never prompts for passwords)."
-        )
+        if cfg.targets[TARGET].is_sftp:
+            from .transport.sftp import password_env
+
+            console.info(
+                f"ym can't log in to {_describe(cfg.targets[TARGET])} without a password."
+                f" An SSH key is best (or set ${password_env(TARGET)} for each command)."
+            )
+        else:
+            console.info(
+                f"ym needs SSH key authentication to {_describe(cfg.targets[TARGET])}"
+                " (it never prompts for passwords)."
+            )
         if _yes(ask, "Set up an SSH key for it now?"):
             code = step(ssh_argv)
             if code != EXIT_OK:
@@ -383,6 +398,14 @@ def run_wizard(
     else:
         res.remaining.append(_cmd(dry))
     res.remaining.append(_cmd([*site, "deploy", TARGET]))
+    if cfg.targets[TARGET].is_sftp:
+        from .deploy.sftp import manual_steps
+
+        console.info("")
+        console.info(f"{TARGET} is an sftp target; after deploying, in the browser:")
+        for item in manual_steps(cfg, cfg.targets[TARGET]):
+            console.info(f"  - {item}")
+            res.remaining.append(f"after deploying: {item}")
     if adopting:
         res.remaining.append(
             f"update YOURLS: {_cmd([*site, 'core', '--version', 'latest'])}, commit,"
@@ -394,7 +417,7 @@ def run_wizard(
 
 def _describe(spec) -> str:
     where = f"{spec.user + '@' if spec.user else ''}{spec.host}" if spec.host else "local"
-    return f"{where}:{spec.path}"
+    return f"{'sftp://' if spec.is_sftp else ''}{where}:{spec.path}"
 
 
 def _summary(res: WizardResult) -> WizardResult:

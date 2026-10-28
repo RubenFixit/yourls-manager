@@ -28,6 +28,8 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REMOTE_PATH_RE = re.compile(r"^[A-Za-z0-9._/@+~-]+$")
 HOST_RE = re.compile(r"^[A-Za-z0-9.-]+$|^\[[0-9A-Fa-f:.]+\]$")
 USER_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+# Keys of rsync targets that mean nothing for sftp targets (warned about, then ignored).
+SFTP_IGNORED_KEYS = ("php", "backup_dir", "backup_keep")
 
 
 class ConfigError(UsageError):
@@ -85,10 +87,16 @@ class TargetSpec:
     protect: tuple[str, ...] = ()
     backup_keep: int = 10
     url: str = ""
+    state_dir: str = ""  # sftp only: manifest + release.json (design §10.3)
+    given: frozenset[str] = frozenset()  # keys set explicitly in site.toml
 
     @property
     def is_local(self) -> bool:
         return self.host is None
+
+    @property
+    def is_sftp(self) -> bool:
+        return self.type == "sftp"
 
 
 @dataclass
@@ -406,15 +414,29 @@ def _parse_target(name: str, raw: Any, site: SiteInfo, warnings: list[str]) -> T
     protect = r.str_list("protect")
     backup_keep = r.int("backup_keep", 10, lo=1, hi=10000)
     url = _check_url(f"{prefix}.url", r.str("url", site.url))
+    state_dir = ""
+    checked = [("path", path), ("config_file", config_file)]
+    if ttype == "sftp":
+        # Design §10.1: no shell, so no PHP CLI, no DB dumps; deploy state lives in state_dir.
+        if host is None:
+            raise ConfigError(f"{prefix}.host", "is required for sftp targets")
+        state_dir = normalize_remote_path(
+            r.str("state_dir") or join_remote(parent, ".yourls-manager", site.slug)
+        )
+        if state_dir in ("", ".", "/"):
+            raise ConfigError(f"{prefix}.state_dir", "must name a directory, not $HOME or /")
+        checked.append(("state_dir", state_dir))
+        for key in SFTP_IGNORED_KEYS:
+            if key in r.table:
+                warnings.append(
+                    f"{SITE_FILE}: '{prefix}.{key}' does not apply to sftp targets; ignored"
+                )
+    else:
+        checked += [("backup_dir", backup_dir), ("php", php)]
     r.finish()
 
     if host is not None:
-        for key, value in (
-            ("path", path),
-            ("config_file", config_file),
-            ("backup_dir", backup_dir),
-            ("php", php),
-        ):
+        for key, value in checked:
             if not REMOTE_PATH_RE.match(value):
                 raise ConfigError(
                     f"{prefix}.{key}",
@@ -437,6 +459,8 @@ def _parse_target(name: str, raw: Any, site: SiteInfo, warnings: list[str]) -> T
         protect=protect,
         backup_keep=backup_keep,
         url=url,
+        state_dir=state_dir,
+        given=frozenset(k for k in r.seen if k in r.table),
     )
 
 

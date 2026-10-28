@@ -6,6 +6,38 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-28
+
+SFTP targets: deploy and adopt sites on hosts that offer SFTP but no shell.
+
+### Added
+
+- `type = "sftp"` deploy targets (`host`, `user`, `port`, `path`, `config_file`, `state_dir`,
+  `protect`, `url`). Login via ssh-agent, key files (`~/.ssh/config` is honored) or a
+  password from `YM_<TARGET>_PASSWORD` / a terminal prompt; host keys from
+  `~/.ssh/known_hosts` (unknown keys are confirmed on a terminal, changed keys always fail).
+- SFTP deploys track deployed files in `<state_dir>/manifest.json`: only new and changed
+  files are uploaded (atomically, entry points last), and only files ym deployed are deleted.
+  `--verify-remote` re-uploads files that were changed on the server. After the deploy, ym
+  checks over HTTP whether YOURLS needs `admin/install.php` or `admin/upgrade.php` and prints
+  the plugins to activate in the admin UI.
+- `ym adopt --from-target` for sftp targets (recursive SFTP download), recording the adopted
+  install's manifest on the server. New `--active A,B,...` (also for rsync targets and
+  `--from-dir`); on a terminal ym asks per plugin when the active set can't be read.
+- `ym server-config` over SFTP, hashing the admin password locally with bcrypt (YOURLS
+  `phpass:` format; verified with PHP `password_verify` and YOURLS'
+  `yourls_check_password_hash`).
+- `ym ssh-setup` for sftp targets: checks with an SFTP login and installs the key into
+  `.ssh/authorized_keys` over SFTP (works for SFTP-only accounts).
+- `ym setup` checks sftp targets with an SFTP login and lists the manual admin steps.
+- Runtime dependencies `paramiko` and `bcrypt` (imported only when needed).
+
+### Changed
+
+- `ym plugins` explains the manual steps for sftp targets instead of running.
+- An sftp deploy that leaves an install or upgrade pending in the browser skips verify and
+  succeeds; run `ym verify TARGET` after finishing it.
+
 ## [0.2.1] - 2026-10-28
 
 ### Added
@@ -65,7 +97,8 @@ Onboarding commands that work from the globally installed tool, before a site re
   JSON-on-stdout contract.
 - Redirect verification from `tests/redirects.toml` plus a JSON health check.
 
-[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/RubenFixit/yourls-manager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/RubenFixit/yourls-manager/releases/tag/v0.1.0

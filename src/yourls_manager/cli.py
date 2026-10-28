@@ -77,10 +77,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("deploy", parents=[common], help="build and deploy to a target")
     p.add_argument("target")
-    p.add_argument("--dry-run", action="store_true", help="show what rsync would change, then stop")
+    p.add_argument("--dry-run", action="store_true", help="show what would change, then stop")
     p.add_argument("--no-build", action="store_true", help="deploy the existing build output")
-    p.add_argument("--skip-backup", action="store_true", help="do not dump the database first")
+    p.add_argument(
+        "--skip-backup",
+        action="store_true",
+        help="do not dump the database first (sftp targets never do)",
+    )
     p.add_argument("--skip-verify", action="store_true", help="do not run verify afterwards")
+    p.add_argument(
+        "--verify-remote",
+        action="store_true",
+        help="sftp targets: stat every deployed file and re-upload ones changed on the server",
+    )
 
     p = sub.add_parser("verify", parents=[common], help="health check + redirect tests")
     p.add_argument("target", nargs="?")
@@ -157,8 +166,9 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
         description=(
             "Write the target's config_file (mode 0600) from server/config.example.php:\n"
             "DB settings, YOURLS_SITE (the target's url), a fresh cookie key and one admin\n"
-            "user whose password is hashed by the target's PHP. With --from-existing, copy\n"
-            "the existing install's user/config.php instead (when adopting)."
+            "user whose password is hashed by the target's PHP (sftp targets: locally with\n"
+            "bcrypt). With --from-existing, copy the existing install's user/config.php\n"
+            "instead (when adopting)."
         ),
         epilog=(
             "secrets (never pass them as arguments):\n"
@@ -190,7 +200,9 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
             "Snapshot an existing install, vendor core at its version, copy site-specific\n"
             "files and plugins into overlay/ (collisions with template files go to\n"
             "adopt-review/), add [[plugins]] entries, and check build/install parity.\n"
-            "Writes adopt-review/REPORT.md. Run inside a site repo created by `ym new`."
+            "Writes adopt-review/REPORT.md. Run inside a site repo created by `ym new`.\n"
+            "sftp targets: the active plugins can't be read; give them with --active, or\n"
+            "answer the per-plugin prompt (on a terminal)."
         ),
     )
     src = p.add_mutually_exclusive_group(required=True)
@@ -202,6 +214,12 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
         default=[],
         metavar="GLOB",
         help="extra path glob to ignore (repeatable; added to the defaults)",
+    )
+    p.add_argument(
+        "--active",
+        metavar="A,B,...",
+        help="plugins active on the install (comma-separated; '' for none);"
+        " instead of reading them from its database",
     )
     p.add_argument("--dry-run", action="store_true", help="analyze and print the plan only")
 
@@ -223,7 +241,8 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
         description=(
             "ym runs ssh non-interactively (BatchMode), so targets need key authentication."
             " This checks it and otherwise runs ssh-keygen and ssh-copy-id for you"
-            " (asking for the SSH password once)."
+            " (asking for the SSH password once). For sftp targets the check is an SFTP"
+            " login and the key is appended to .ssh/authorized_keys over SFTP."
         ),
     )
     p.add_argument("target")
@@ -280,10 +299,14 @@ def _dispatch(args: argparse.Namespace) -> int:
         if not spec.is_local and not (sys.stdin.isatty() and sys.stdout.isatty()):
             from .sshsetup import check_ssh
 
-            if check_ssh(spec).ok:
+            res = check_ssh(spec)
+            if res.ok:
                 console.info("key authentication works")
                 return EXIT_OK
-            raise UsageError("`ym ssh-setup` needs a terminal to create or install a key")
+            raise UsageError(
+                "`ym ssh-setup` needs a terminal to create or install a key"
+                + (f"\n{res.detail}" if spec.is_sftp and res.detail else "")
+            )
         ok = ssh_setup(spec, confirm=_confirm, key=args.key)
         return EXIT_OK if ok else EXIT_ERROR
 
@@ -349,12 +372,15 @@ def _dispatch(args: argparse.Namespace) -> int:
         from .deploy import DeployOptions, get_target
 
         target = get_target(cfg, args.target)
+        if args.verify_remote and not target.spec.is_sftp:
+            raise UsageError("--verify-remote applies to sftp targets only")
         ok = target.deploy(
             DeployOptions(
                 dry_run=args.dry_run,
                 no_build=args.no_build,
                 skip_backup=args.skip_backup,
                 skip_verify=args.skip_verify,
+                verify_remote=args.verify_remote,
             )
         )
         return EXIT_OK if ok else EXIT_ERROR
@@ -392,6 +418,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             from_dir=args.from_dir,
             ignore=args.ignore,
             dry_run=args.dry_run,
+            active=None if args.active is None else args.active.split(","),
         )
         return EXIT_OK
 

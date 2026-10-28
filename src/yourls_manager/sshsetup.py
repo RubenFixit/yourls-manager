@@ -4,20 +4,31 @@ ym always runs ssh with ``BatchMode=yes`` (a deploy opens many connections; a pa
 prompt in the middle of rsync would hang), so targets need key authentication. This
 command checks it and, when it fails, walks through creating a key (``ssh-keygen``) and
 installing it on the server (``ssh-copy-id``, which asks for the password once).
+
+SFTP targets (design §10.4) are checked with an SFTP connection instead of a shell command
+(SFTP-only accounts have no shell), and the key is installed by logging in with the
+password over SFTP and appending it to ``.ssh/authorized_keys`` (``.ssh`` 700, file 600).
 """
 
 from __future__ import annotations
 
 import os
+import posixpath
 import shutil
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from .config import TargetSpec
 from .remote import SshRunner
 from .util import UsageError, YMError, console
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .transport.sftp import SftpTransport
+
+TransportFactory = Callable[..., "SftpTransport"]
 
 # Runs a command attached to the terminal (password / passphrase prompts); returns exit code.
 Interactive = Callable[[Sequence[str]], int]
@@ -55,9 +66,18 @@ def classify(returncode: int, stderr: str) -> SshCheck:
     return SshCheck(False, "other", err)
 
 
-def check_ssh(spec: TargetSpec, identity: Path | None = None) -> SshCheck:
+def check_ssh(
+    spec: TargetSpec, identity: Path | None = None, *, password: bool = False
+) -> SshCheck:
     """Try a non-interactive connection the same way every other ym command does
-    (optionally forcing one key with ``-i``)."""
+    (optionally forcing one key with ``-i``). For sftp targets an SFTP session is opened;
+    ``password=True`` also accepts a password from ``YM_<TARGET>_PASSWORD``."""
+    if spec.is_sftp:
+        from .transport.sftp import check_sftp
+
+        kw: dict[str, Any] = {} if password else {"env": {}}
+        reason, detail = check_sftp(spec, identity, **kw)
+        return SshCheck(reason == "ok", reason, detail)
     if spec.is_local:
         return SshCheck(True, "ok")
     assert spec.host is not None
@@ -99,8 +119,18 @@ def ssh_setup(
     interactive: Interactive = _terminal,
     key: Path | None = None,
     check: Callable[..., SshCheck] = check_ssh,
+    transport: TransportFactory | None = None,
 ) -> bool:
     """Return True when key authentication to ``spec`` works afterwards."""
+    if spec.is_sftp:
+        return sftp_setup(
+            spec,
+            confirm=confirm,
+            interactive=interactive,
+            key=key,
+            check=check,
+            transport=transport,
+        )
     if spec.is_local:
         console.info(f"target {spec.name} is local; no SSH needed")
         return True
@@ -123,20 +153,9 @@ def ssh_setup(
 
     key = key or default_key()
     pub = key.with_name(key.name + ".pub")
-    if not pub.is_file():
-        if not confirm(f"No SSH key at {key}. Create one now (ssh-keygen -t ed25519)?"):
-            _manual_help(dest, spec.port, key)
-            return False
-        key.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        console.info(
-            "  ssh-keygen asks for a passphrase. With a passphrase, load the key into an"
-            " agent before running ym (ssh-add); leave it empty for unattended use."
-        )
-        comment = f"yourls-manager@{os.uname().nodename}" if hasattr(os, "uname") else "ym"
-        if interactive(["ssh-keygen", "-t", "ed25519", "-f", str(key), "-C", comment]) != 0:
-            raise YMError("ssh-keygen failed")
-    else:
-        console.info(f"  using existing key {pub}")
+    if not _ensure_key(key, confirm, interactive):
+        _manual_help(dest, spec.port, key)
+        return False
 
     if not confirm(
         f"Install {pub.name} on {dest}? You will be asked for the SSH password once"
@@ -179,6 +198,138 @@ def ssh_setup(
             f"{res.detail}"
         )
     raise YMError(f"ssh to {dest} still fails: {res.detail}")
+
+
+def _ensure_key(key: Path, confirm: Confirm, interactive: Interactive) -> bool:
+    """Make sure ``key``/``key.pub`` exist (offering ssh-keygen). False when declined."""
+    pub = key.with_name(key.name + ".pub")
+    if pub.is_file():
+        console.info(f"  using existing key {pub}")
+        return True
+    if not confirm(f"No SSH key at {key}. Create one now (ssh-keygen -t ed25519)?"):
+        return False
+    key.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    console.info(
+        "  ssh-keygen asks for a passphrase. With a passphrase, load the key into an"
+        " agent before running ym (ssh-add); leave it empty for unattended use."
+    )
+    comment = f"yourls-manager@{os.uname().nodename}" if hasattr(os, "uname") else "ym"
+    if interactive(["ssh-keygen", "-t", "ed25519", "-f", str(key), "-C", comment]) != 0:
+        raise YMError("ssh-keygen failed")
+    return True
+
+
+# --------------------------------------------------------------------------- sftp
+
+
+def install_key_sftp(t: SftpTransport, public_key: str) -> bool:
+    """Append ``public_key`` to ``.ssh/authorized_keys`` in the SFTP login dir.
+
+    Creates ``.ssh`` (0700) and the file (0600) as needed. Returns False when the key was
+    already there."""
+    line = public_key.strip()
+    if not line or "\n" in line:
+        raise UsageError("the public key must be a single line")
+    blob = line.split()[1] if len(line.split()) > 1 else line
+    ssh_dir = t.abspath(".ssh")
+    if not t.is_dir(ssh_dir):
+        t.mkdirs(ssh_dir, 0o700)
+    path = posixpath.join(ssh_dir, "authorized_keys")
+    existing = t.read_bytes(path).decode("utf-8", "replace") if t.is_file(path) else ""
+    for old in existing.splitlines():
+        parts = old.split()
+        if blob in parts:
+            console.info(f"  the key is already in {path}")
+            return False
+    if existing and not existing.endswith("\n"):
+        existing += "\n"
+    t.write_bytes(path, (existing + line + "\n").encode("utf-8"), 0o600)
+    console.info(f"  added the key to {path}")
+    return True
+
+
+def sftp_setup(
+    spec: TargetSpec,
+    *,
+    confirm: Confirm,
+    interactive: Interactive = _terminal,
+    key: Path | None = None,
+    check: Callable[..., SshCheck] = check_ssh,
+    transport: TransportFactory | None = None,
+) -> bool:
+    """ssh-setup for sftp targets: everything happens over SFTP (no shell needed)."""
+    from .transport.sftp import SftpAuthError, SftpTransport, password_env
+
+    factory: TransportFactory = transport or SftpTransport.for_target
+    probe = factory(spec, interactive=False, env={})
+    login = probe.login
+    console.step(f"check SFTP key login to {login}")
+    res = check(spec)
+    if res.ok:
+        console.info("  key authentication works")
+        return True
+    if res.reason == "network":
+        raise YMError(res.detail)
+    if res.reason == "hostkey":
+        if "CHANGED" in res.detail:
+            raise YMError(res.detail)
+        console.info("  the server's host key is not trusted yet (first connection)")
+        t = factory(spec, interactive=True, confirm=confirm, allow_password_prompt=False)
+        try:
+            with t:
+                t.home()
+        except SftpAuthError:
+            pass  # host key is trusted now; key login is set up below
+        res = check(spec)
+        if res.ok:
+            console.info("  key authentication works")
+            return True
+    if res.reason != "auth":
+        raise YMError(f"SFTP login to {login} failed: {res.detail}")
+    console.info("  key authentication is not set up yet")
+
+    key = key or default_key()
+    pub = key.with_name(key.name + ".pub")
+    env_name = password_env(spec.name)
+    if not _ensure_key(key, confirm, interactive):
+        _manual_help_sftp(login, pub, env_name)
+        return False
+    if not confirm(
+        f"Install {pub.name} on {login} over SFTP? You will be asked for the SFTP password"
+        f" once (or set ${env_name})."
+    ):
+        _manual_help_sftp(login, pub, env_name)
+        return False
+    with factory(spec, interactive=True, confirm=confirm) as t:
+        install_key_sftp(t, pub.read_text(encoding="utf-8"))
+
+    res = check(spec)
+    if res.ok:
+        console.info("  key authentication works")
+        return True
+    if res.reason == "auth" and check(spec, key).ok:
+        raise YMError(
+            f"the key works when given explicitly, but ym does not use {key} by default.\n"
+            "Add this to ~/.ssh/config, then run `ym ssh-setup` again:\n"
+            f"  Host {spec.host}\n    IdentityFile {key}"
+        )
+    raise YMError(
+        f"the key was installed but key login to {login} still fails.\n"
+        "Some hosts read authorized_keys from another place for SFTP-only (chrooted)"
+        " accounts; ask your host how to add an SSH key. If the key has a passphrase, load"
+        ' it into an agent first: eval "$(ssh-agent -s)" && ssh-add\n'
+        f"{res.detail}"
+    )
+
+
+def _manual_help_sftp(login: str, pub: Path, env_name: str) -> None:
+    console.info("To set it up yourself:")
+    console.info(f"  ssh-keygen -t ed25519 -f {pub.with_suffix('')}")
+    console.info(
+        f"  add the line in {pub} to .ssh/authorized_keys in the SFTP login dir of {login}"
+        " (.ssh mode 700, file mode 600), or ask your host to add it"
+    )
+    console.info(f"Or use the password: set ${env_name} (ym never stores it).")
 
 
 def _sq(s: str) -> str:

@@ -1,7 +1,8 @@
-"""`ym adopt` (design §9): bring an existing, unmanaged YOURLS install under management.
+"""`ym adopt` (design §9, §10.4): bring an existing, unmanaged YOURLS install under management.
 
 Works inside a site repo created by ``ym new``. The install is snapshotted (a local
-directory, or an rsync pull of a target's web root), compared with pristine upstream core
+directory, an rsync pull of a target's web root, or a recursive SFTP download for sftp
+targets), compared with pristine upstream core
 at the installed version, and every site-specific difference is carried into ``overlay/``
 (or ``adopt-review/`` when it collides with an existing overlay file) so that the first
 ``ym deploy`` reproduces what runs today.
@@ -14,9 +15,10 @@ import importlib.resources
 import json
 import re
 import shutil
+import sys
 import tempfile
 import tomllib
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -54,6 +56,8 @@ PLUGINS_REL = "user/plugins"
 REVIEW_DIR = "adopt-review"
 REPORT_FILE = "REPORT.md"
 
+AskActive = Callable[[str], bool]
+
 _PLUGIN_URI_RE = re.compile(r"^[ \t/*#]*Plugin URI:\s*(\S.*?)\s*$", re.MULTILINE | re.IGNORECASE)
 _TABLE_HEADER_RE = re.compile(r"^\s*\[\[?\s*([^\[\]]+?)\s*\]\]?\s*(#.*)?$")
 
@@ -69,6 +73,8 @@ class Snapshot:
     helper_version: str | None = None
     cleanup: Path | None = None
     extra_ignores: tuple[str, ...] = ()
+    active_source: str = "database"  # database | --active | prompt
+    sftp_target: object | None = None  # SftpTarget: adopt uploads a manifest after success
 
 
 @dataclass
@@ -250,13 +256,18 @@ def snapshot_dir(path: Path, *, use_helper: bool = True) -> Snapshot:
     return snap
 
 
-def snapshot_target(cfg: SiteConfig, name: str, ignore: Ignore, *, dry_run: bool) -> Snapshot:
+def snapshot_target(
+    cfg: SiteConfig, name: str, ignore: Ignore, *, dry_run: bool, read_active: bool = True
+) -> Snapshot:
     from .deploy import get_target
     from .deploy.rsync import RsyncTarget
+    from .deploy.sftp import SftpTarget
 
     target = get_target(cfg, name)
+    if isinstance(target, SftpTarget):
+        return snapshot_sftp(target, ignore)
     if not isinstance(target, RsyncTarget):
-        raise UsageError(f"target {name}: adopt supports rsync targets only")
+        raise UsageError(f"target {name}: adopt supports rsync and sftp targets only")
     runner = target.runner
     target.preflight(need_config=False)
     web_root = target.web_root
@@ -275,6 +286,8 @@ def snapshot_target(cfg: SiteConfig, name: str, ignore: Ignore, *, dry_run: bool
         target.rsync(runner.rsync_dest(web_root) + "/", f"{snap_root}/", extra)
         n = sum(1 for _ in iter_files(snap_root))
         console.info(f"  {n} files")
+        if not read_active:
+            return snap
         if dry_run:
             console.info("  dry run: not uploading the helper; active plugins are not read")
             return snap
@@ -293,6 +306,74 @@ def snapshot_target(cfg: SiteConfig, name: str, ignore: Ignore, *, dry_run: bool
         rmtree(tmp)
         raise
     return snap
+
+
+def snapshot_sftp(target, ignore: Ignore) -> Snapshot:
+    """Recursive SFTP download of the web root (read-only). Active plugins can't be read."""
+    t = target.transport
+    with t:
+        target.preflight(create=False, need_config=False)
+        web_root = target.web_root
+        source = f"{t.describe()}:{web_root}"
+        if not t.is_file(join_remote(web_root, "includes/version.php")):
+            raise UsageError(f"{source} is not a YOURLS install (includes/version.php missing)")
+        tmp = Path(tempfile.mkdtemp(prefix="ym-adopt-"))
+        snap_root = tmp / "snapshot"
+        snap_root.mkdir()
+        snap = Snapshot(root=snap_root, source=source, cleanup=tmp, sftp_target=target)
+        try:
+            console.step(f"snapshot {source} (read-only SFTP download)")
+            listing = t.walk(web_root, skip=ignore)
+            for rel in listing.dirs:
+                (snap_root / rel).mkdir(parents=True, exist_ok=True)
+            for i, (rel, _attr) in enumerate(listing.files, 1):
+                t.download(join_remote(web_root, rel), snap_root / rel)
+                console.detail(f"[{i}/{len(listing.files)}] {rel}")
+            console.info(f"  {len(listing.files)} files")
+            if listing.links:
+                console.warn(
+                    f"skipped {len(listing.links)} symlink(s) / special file(s) on the server: "
+                    + ", ".join(listing.links[:10])
+                    + (" ..." if len(listing.links) > 10 else "")
+                )
+        except BaseException:
+            rmtree(tmp)
+            raise
+    return snap
+
+
+def _tty() -> bool:
+    try:
+        return bool(sys.stdin and sys.stdin.isatty())
+    except (AttributeError, OSError, ValueError):
+        return False
+
+
+def _ask_yes_no(question: str) -> bool:
+    while True:
+        answer = input(f"{question} [y/n]: ").strip().lower()
+        if answer in ("y", "yes"):
+            return True
+        if answer in ("n", "no"):
+            return False
+
+
+def resolve_active(
+    snap: Snapshot, ignore: Ignore, active: Iterable[str] | None, ask: AskActive | None
+) -> None:
+    """``--active`` wins; otherwise, when the install couldn't tell, ask per plugin found."""
+    if active is not None:
+        snap.active_plugins = list(dict.fromkeys(a.strip() for a in active if a.strip()))
+        snap.active_source = "--active"
+        return
+    if snap.active_plugins is not None or ask is None:
+        return
+    names = _plugin_dirs(snap.root, ignore)
+    if not names:
+        return
+    console.step("active plugins (could not be read from the install)")
+    snap.active_plugins = [n for n in names if ask(f"Is plugin {n!r} active on the live site?")]
+    snap.active_source = "prompt"
 
 
 # --------------------------------------------------------------------------- version
@@ -575,11 +656,13 @@ def write_report(
         return "\n".join(f"- `{p}` ({cat})" for p, cat in entries.items())
 
     unexpected = parity.unexpected_count
-    active_read = (
-        "yes"
-        if snap.active_plugins is not None
-        else "**no** (entries marked `# TODO verify` in site.toml)"
-    )
+    if snap.active_plugins is None:
+        active_read = "**unknown** (entries marked `# TODO verify` in site.toml)"
+    else:
+        active_read = {
+            "--active": "given with `--active`",
+            "prompt": "answered at the prompt",
+        }.get(snap.active_source, "read from the install's database")
     review_items = plan.review_files + [
         f"user/plugins/{d.name}/" for d in plan.plugins if d.action == "review"
     ]
@@ -593,7 +676,7 @@ Generated by `ym adopt` (yourls-manager) on {iso_utc()}.
 
 - Source: `{snap.source}`
 - YOURLS version: **{plan.version}** (core tag `{plan.tag}` @ `{plan.commit[:10]}`)
-- Active plugins read from the install's database: {active_read}
+- Active plugins: {active_read}
 
 ## Overlay files added
 
@@ -681,7 +764,12 @@ def adopt(
     ignore: Iterable[str] = (),
     dry_run: bool = False,
     use_helper: bool = True,
+    active: Iterable[str] | None = None,
+    ask_active: AskActive | None = None,
 ) -> AdoptResult:
+    """``active``: the plugins active on the install (``--active``), when it can't be read
+    (sftp targets) or to override it. ``ask_active``: per-plugin yes/no prompt used when the
+    active set is unknown; defaults to an input() prompt on a terminal."""
     if (from_target is None) == (from_dir is None):
         raise UsageError("give exactly one of --from-target TARGET or --from-dir PATH")
     patterns = [*DEFAULT_IGNORES, *ignore]
@@ -691,14 +779,18 @@ def adopt(
         patterns += list(spec.protect)
     ign = Ignore(patterns)
 
+    active = None if active is None else list(active)
     if from_target is not None:
-        snap = snapshot_target(cfg, from_target, ign, dry_run=dry_run)
+        snap = snapshot_target(cfg, from_target, ign, dry_run=dry_run, read_active=active is None)
     else:
         assert from_dir is not None
-        snap = snapshot_dir(from_dir, use_helper=use_helper)
+        snap = snapshot_dir(from_dir, use_helper=use_helper and active is None)
         if snap.root == cfg.root or cfg.root.is_relative_to(snap.root):
             raise UsageError("--from-dir must not contain the site repo")
     snap.extra_ignores = tuple(p for p in ign.patterns if p not in DEFAULT_IGNORES)
+    if ask_active is None and _tty() and not dry_run:
+        ask_active = _ask_yes_no
+    resolve_active(snap, ign, active, None if dry_run else ask_active)
 
     pristine_tmp = gitsrc.temp_checkout_dir()
     try:
@@ -774,6 +866,8 @@ def adopt(
         )
         _print_parity(parity)
         report = write_report(cfg, snap, plan, parity, from_target, toml_added)
+        if snap.sftp_target is not None:
+            upload_adopted_manifest(snap, version)
     finally:
         rmtree(pristine_tmp)
         if snap.cleanup is not None:
@@ -792,6 +886,21 @@ def adopt(
     console.info(f"  ym deploy {tname}")
     console.info(f"  ym core --version latest && ym deploy {tname}   # then actually update")
     return AdoptResult(plan, parity, report, toml_added)
+
+
+def upload_adopted_manifest(snap: Snapshot, version: str) -> None:
+    """Record the adopted install as "deployed" so the first deploy only sends real
+    differences (and may delete files that belonged to the adopted install)."""
+    from .deploy.sftp import SftpTarget, snapshot_manifest, write_json
+
+    target = snap.sftp_target
+    assert isinstance(target, SftpTarget)
+    console.step("record the adopted install (manifest for the first deploy)")
+    manifest = snapshot_manifest(snap.root, snap.source, version)
+    with target.transport as t:
+        t.mkdirs(target.state_dir, 0o700)
+        write_json(t, target.manifest_file, manifest)
+    console.info(f"  {target.manifest_file} ({len(manifest['files'])} files)")
 
 
 def _copy_file(src: Path, dest: Path) -> None:
@@ -860,7 +969,8 @@ def _warn_plugins(plan: Plan, snap: Snapshot) -> None:
                 if bundled
                 else ""
             )
-            + "  `ym deploy` makes the active set exactly site.toml's: fix site.toml first!"
+            + "  `ym deploy` makes the active set exactly site.toml's: fix site.toml first!\n"
+            + "  (Re-run with `--active a,b,...` to give the active plugins explicitly.)"
         )
     if plan.toml_not_in_snapshot:
         console.warn(

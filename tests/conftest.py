@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import http.server
+import os
 import shutil
 import subprocess
 import textwrap
@@ -108,6 +109,15 @@ def core_files(version: str, db: str = "507") -> dict[str, str]:
     }
 
 
+@pytest.fixture
+def fake_core(upstream):
+    """Fake YOURLS core upstream with tags 1.0.0 and 1.1.0."""
+    core = upstream("core")
+    core.commit(core_files("1.0.0"), tag="1.0.0")
+    core.commit(core_files("1.1.0"), tag="1.1.0")
+    return core
+
+
 needs_rsync = pytest.mark.skipif(shutil.which("rsync") is None, reason="rsync not installed")
 needs_php = pytest.mark.skipif(shutil.which("php") is None, reason="php CLI not installed")
 
@@ -213,3 +223,116 @@ def no_uv_lock(monkeypatch):
 
     monkeypatch.setattr(newsite, "uv_lock", fake)
     return calls
+
+
+# --------------------------------------------------------------------------- sftp (v0.3)
+
+from . import sftp_server  # noqa: E402
+
+SFTP_SKIP = sftp_server.unavailable_reason()
+needs_sshd = pytest.mark.skipif(SFTP_SKIP is not None, reason=f"real sshd: {SFTP_SKIP}")
+
+
+@pytest.fixture(autouse=True)
+def _forget_sftp_passwords():
+    """The SFTP transport caches a prompted password per process; isolate tests."""
+    from yourls_manager.transport import sftp
+
+    sftp._PASSWORDS.clear()
+    yield
+    sftp._PASSWORDS.clear()
+
+
+@pytest.fixture(scope="session")
+def sshd(tmp_path_factory):
+    """A real OpenSSH server on 127.0.0.1 (random port) with two test accounts."""
+    if SFTP_SKIP is not None:
+        pytest.skip(SFTP_SKIP)
+    srv = sftp_server.SshServer(tmp_path_factory.mktemp("sshd"))
+    srv.start()
+    yield srv
+    srv.stop()
+
+
+@pytest.fixture(scope="session")
+def client_key(tmp_path_factory) -> Path:
+    """An unencrypted ed25519 key pair (private key path; ``.pub`` beside it)."""
+    key = tmp_path_factory.mktemp("clientkey") / "id_ed25519"
+    subprocess.run(
+        ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "ym-test", "-f", str(key)],
+        check=True,
+    )
+    return key
+
+
+@pytest.fixture(params=[False, True], ids=["shell-account", "sftp-only-account"])
+def account(request, sshd) -> sftp_server.Account:
+    """A freshly emptied account: an ordinary one, and a chrooted SFTP-only one."""
+    return sshd.account(request.param)
+
+
+@pytest.fixture
+def sftp_only(sshd) -> sftp_server.Account:
+    return sshd.account(True)
+
+
+@pytest.fixture
+def ssh_home(tmp_path, monkeypatch, sshd) -> Path:
+    """$HOME for the client side: ~/.ssh/known_hosts trusts the test server, no agent."""
+    home = tmp_path / "client-home"
+    (home / ".ssh").mkdir(parents=True, mode=0o700)
+    (home / ".ssh" / "known_hosts").write_text(sshd.known_hosts_line())
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("SSH_AUTH_SOCK", raising=False)
+    for name in list(os.environ):
+        if name.startswith("YM_") and name.endswith("_PASSWORD"):
+            monkeypatch.delenv(name)
+    return home
+
+
+def install_client_key(home: Path, key: Path) -> None:
+    """Make ``key`` the default key (~/.ssh/id_ed25519), as ssh would find it."""
+    dest = home / ".ssh" / "id_ed25519"
+    shutil.copy(key, dest)
+    shutil.copy(key.with_name(key.name + ".pub"), dest.with_name("id_ed25519.pub"))
+    dest.chmod(0o600)
+
+
+class StateHandler(http.server.BaseHTTPRequestHandler):
+    """Emulates YOURLS' install/upgrade redirects (mode: ok | install | upgrade)."""
+
+    mode = "ok"
+
+    def do_GET(self):
+        path = self.path
+        status, location, body = 404, None, b"not found"
+        if path == "/":
+            status, location, body = 302, "/admin/", b""  # template .htaccess: root -> admin
+        elif path == "/admin/" and self.mode in ("install", "upgrade"):
+            host = self.headers.get("Host")
+            status, location, body = 307, f"http://{host}/admin/{self.mode}.php", b""
+        elif path == "/admin/":
+            status, body = 200, b"<html>login</html>"
+        elif path == "/health.php":
+            status, body = 200, b'{"ok": true}'
+        self.send_response(status)
+        if location:
+            self.send_header("Location", location)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture
+def state_server():
+    """(url, handler class): set ``handler.mode`` to "install" / "upgrade" / "ok"."""
+    handler = type("H", (StateHandler,), {"mode": "ok"})
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    t = threading.Thread(target=httpd.serve_forever, daemon=True)
+    t.start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}", handler
+    httpd.shutdown()
+    httpd.server_close()

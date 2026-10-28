@@ -1,9 +1,10 @@
 """`ym server-config` (design §9): create the server-local YOURLS config on a target.
 
 Secrets (DB password, admin password) are read from the environment or prompted with
-``getpass``; they never appear in argv or logs. The admin password is hashed by the
-target's PHP, reading the password from stdin, in the format YOURLS uses
-(``phpass:`` + ``password_hash()`` with ``$`` stored as ``!``).
+``getpass``; they never appear in argv or logs. The admin password is stored in the format
+YOURLS uses (``phpass:`` + ``password_hash()`` with ``$`` stored as ``!``): hashed by the
+target's PHP (password on stdin) for rsync targets, or locally with bcrypt for sftp targets,
+which have no PHP CLI (design §10.4).
 """
 
 from __future__ import annotations
@@ -15,10 +16,14 @@ import secrets
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from .config import SiteConfig, TargetSpec, join_remote, parent_of
 from .remote import Runner, runner_for
 from .util import UsageError, YMError, compact_utc, console
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .transport.sftp import SftpTransport
 
 EXAMPLE_FILE = "server/config.example.php"
 DB_PASSWORD_ENV = "YM_DB_PASSWORD"
@@ -31,6 +36,8 @@ HASH_PHP = (
     " echo 'phpass:', str_replace('$', '!', password_hash($p, PASSWORD_DEFAULT));"
 )
 PHPASS_RE = re.compile(r"^phpass:![0-9a-z]+![A-Za-z0-9!./]+$")
+BCRYPT_COST = 10
+BCRYPT_MAX_BYTES = 72
 
 # Markers that identify the ym config shim (overlay/user/config.php from the template).
 SHIM_MARKERS = ("YOURLS_CONFIG_FILE", "server-local configuration missing")
@@ -222,33 +229,118 @@ def hash_password(runner: Runner, php: str, password: str) -> str:
     return out
 
 
+def bcrypt_phpass(password: str, *, rounds: int = BCRYPT_COST) -> str:
+    """Hash locally in YOURLS' format: ``phpass:`` + bcrypt with ``$2y$`` and ``$`` -> ``!``.
+
+    PHP's ``password_hash(PASSWORD_DEFAULT)`` is bcrypt ``$2y$``; ``$2b$`` hashes are the
+    same algorithm, and ``password_verify`` accepts the ``$2y$`` spelling of them.
+    """
+    import bcrypt
+
+    raw = password.encode("utf-8")
+    if not raw:
+        raise UsageError("empty password")
+    if len(raw) > BCRYPT_MAX_BYTES:
+        raise UsageError(f"the admin password must be at most {BCRYPT_MAX_BYTES} bytes (bcrypt)")
+    hashed = bcrypt.hashpw(raw, bcrypt.gensalt(rounds=rounds)).decode("ascii")
+    if hashed.startswith("$2b$"):
+        hashed = "$2y$" + hashed[4:]
+    out = "phpass:" + hashed.replace("$", "!")
+    if not PHPASS_RE.match(out):  # pragma: no cover - defensive
+        raise YMError("bcrypt produced an unexpected hash format")
+    return out
+
+
+# --------------------------------------------------------------------------- target files
+
+
+class _RunnerFiles:
+    """server-config's file access through a shell runner (rsync targets)."""
+
+    def __init__(self, runner: Runner):
+        self.runner = runner
+
+    def describe(self) -> str:
+        return self.runner.describe()
+
+    def abspath(self, path: str) -> str:
+        return self.runner.abspath(path)
+
+    def exists(self, path: str) -> bool:
+        return self.runner.exists(path, "-e")
+
+    def is_file(self, path: str) -> bool:
+        return self.runner.exists(path, "-f")
+
+    def read_text(self, path: str) -> str:
+        return self.runner.run(["cat", "--", path]).stdout.decode("utf-8", errors="replace")
+
+    def backup(self, path: str, dest: str) -> None:
+        self.runner.run(["cp", "-p", "--", path, dest])
+        self.runner.run(["chmod", "600", "--", dest])
+
+    def write_secret(self, path: str, data: bytes) -> None:
+        self.runner.mkdir(parent_of(path))
+        self.runner.write_file(path, data, "0600")
+
+
+class _SftpFiles:
+    """server-config's file access over SFTP (sftp targets)."""
+
+    def __init__(self, transport: SftpTransport):
+        self.t = transport
+
+    def describe(self) -> str:
+        return self.t.describe()
+
+    def abspath(self, path: str) -> str:
+        return self.t.abspath(path)
+
+    def exists(self, path: str) -> bool:
+        return self.t.exists(path)
+
+    def is_file(self, path: str) -> bool:
+        return self.t.is_file(path)
+
+    def read_text(self, path: str) -> str:
+        return self.t.read_bytes(path).decode("utf-8", errors="replace")
+
+    def backup(self, path: str, dest: str) -> None:
+        self.t.write_bytes(dest, self.t.read_bytes(path), 0o600)
+
+    def write_secret(self, path: str, data: bytes) -> None:
+        self.t.mkdirs(parent_of(path))
+        self.t.write_bytes(path, data, 0o600)  # atomic; 0600 before any data is written
+
+
+Files = _RunnerFiles | _SftpFiles
+
+
 # --------------------------------------------------------------------------- command
 
 
-def _existing_install_config(runner: Runner, web_root: str) -> str:
+def _existing_install_config(files: Files, web_root: str) -> str:
     for rel in ("user/config.php", "includes/config.php"):
         candidate = join_remote(web_root, rel)
-        if runner.exists(candidate, "-f"):
+        if files.is_file(candidate):
             return candidate
     raise UsageError(
         f"no existing YOURLS config at {web_root}/user/config.php or"
-        f" {web_root}/includes/config.php on {runner.describe()}"
+        f" {web_root}/includes/config.php on {files.describe()}"
     )
 
 
-def _write_config(runner: Runner, path: str, data: bytes, force: bool) -> None:
-    if runner.exists(path, "-e"):
+def _write_config(files: Files, path: str, data: bytes, force: bool) -> None:
+    if files.exists(path):
         if not force:
             raise UsageError(
-                f"{path} already exists on {runner.describe()}; pass --force to replace it"
+                f"{path} already exists on {files.describe()}; pass --force to replace it"
                 " (the old file is kept as a .bak-<timestamp> copy)"
             )
         backup = f"{path}.bak-{compact_utc()}"
-        runner.run(["cp", "-p", "--", path, backup])
-        runner.run(["chmod", "600", "--", backup])
+        files.backup(path, backup)
         console.info(f"  backed up the old file to {backup}")
-    runner.mkdir(parent_of(path))
-    runner.write_file(path, data, "0600")
+    files.write_secret(path, data)
 
 
 def server_config(
@@ -257,16 +349,37 @@ def server_config(
     opts: ServerConfigOptions,
     *,
     runner: Runner | None = None,
+    transport: SftpTransport | None = None,
     env: Mapping[str, str] | None = None,
     ask: AskFn | None = None,
     secret_prompt: AskFn | None = None,
 ) -> str:
     """Create the target's server-local config. Returns its absolute path on the target."""
     spec: TargetSpec = cfg.target(target_name)
-    runner = runner or runner_for(spec)
     env = os.environ if env is None else env
-    path = runner.abspath(spec.config_file)
-    console.step(f"server-config {target_name} ({runner.describe()}:{path})")
+    if spec.is_sftp:
+        from .transport.sftp import SftpTransport
+
+        t = transport or SftpTransport.for_target(spec)
+        with t:
+            return _server_config(cfg, spec, opts, _SftpFiles(t), None, env, ask, secret_prompt)
+    runner = runner or runner_for(spec)
+    return _server_config(cfg, spec, opts, _RunnerFiles(runner), runner, env, ask, secret_prompt)
+
+
+def _server_config(
+    cfg: SiteConfig,
+    spec: TargetSpec,
+    opts: ServerConfigOptions,
+    files: Files,
+    runner: Runner | None,
+    env: Mapping[str, str],
+    ask: AskFn | None,
+    secret_prompt: AskFn | None,
+) -> str:
+    target_name = spec.name
+    path = files.abspath(spec.config_file)
+    console.step(f"server-config {target_name} ({files.describe()}:{path})")
 
     if opts.from_existing:
         flags = [opts.db_host, opts.db_name, opts.db_user, opts.db_prefix, opts.admin_user]
@@ -274,13 +387,13 @@ def server_config(
             raise UsageError(
                 "--from-existing copies the existing config; it takes no --db-*/--admin-user values"
             )
-        if runner.exists(path, "-e") and not opts.force:
+        if files.exists(path) and not opts.force:
             raise UsageError(
-                f"{path} already exists on {runner.describe()}; pass --force to replace it"
+                f"{path} already exists on {files.describe()}; pass --force to replace it"
             )
-        web_root = runner.abspath(spec.path)
-        source = _existing_install_config(runner, web_root)
-        text = runner.run(["cat", "--", source]).stdout.decode("utf-8", errors="replace")
+        web_root = files.abspath(spec.path)
+        source = _existing_install_config(files, web_root)
+        text = files.read_text(source)
         if is_shim(text):
             raise UsageError(
                 f"{source} is already the yourls-manager config shim, not a real config;"
@@ -288,7 +401,7 @@ def server_config(
             )
         if "YOURLS_DB_" not in text:
             raise UsageError(f"{source} does not look like a YOURLS config (no YOURLS_DB_*)")
-        _write_config(runner, path, text.encode("utf-8"), opts.force)
+        _write_config(files, path, text.encode("utf-8"), opts.force)
         console.info(f"  copied {source} -> {path} (mode 0600)")
         if "__DIR__" in text or "__FILE__" in text or "dirname(" in text:
             console.warn(
@@ -308,9 +421,9 @@ def server_config(
     if not example.is_file():
         raise UsageError(f"{example} not found (the template provides it)")
     template = example.read_text(encoding="utf-8")
-    if runner.exists(path, "-e") and not opts.force:
+    if files.exists(path) and not opts.force:
         raise UsageError(
-            f"{path} already exists on {runner.describe()}; pass --force to replace it"
+            f"{path} already exists on {files.describe()}; pass --force to replace it"
             " (the old file is kept as a .bak-<timestamp> copy)"
         )
 
@@ -340,8 +453,12 @@ def server_config(
     db_pass = _secret(DB_PASSWORD_ENV, "Database password", env, secret_prompt, False)
     admin_pass = _secret(ADMIN_PASSWORD_ENV, f"Password for {admin_user}", env, secret_prompt, True)
 
-    console.info(f"  hashing the admin password with {spec.php} on {runner.describe()}")
-    phpass = hash_password(runner, spec.php, admin_pass)
+    if runner is None:
+        console.info(f"  hashing the admin password locally (bcrypt, cost {BCRYPT_COST})")
+        phpass = bcrypt_phpass(admin_pass)
+    else:
+        console.info(f"  hashing the admin password with {spec.php} on {runner.describe()}")
+        phpass = hash_password(runner, spec.php, admin_pass)
     text = render_config(
         template,
         db_user=db_user,
@@ -353,7 +470,7 @@ def server_config(
         cookie_key=secrets.token_hex(32),
         users={admin_user: phpass},
     )
-    _write_config(runner, path, text.encode("utf-8"), opts.force)
+    _write_config(files, path, text.encode("utf-8"), opts.force)
     console.info(
         f"  wrote {path} (mode 0600): db {db_user}@{db_host}"
         f"/{db_name}, site {spec.url}, admin user {admin_user}"
@@ -363,6 +480,7 @@ def server_config(
 
 __all__ = [
     "ServerConfigOptions",
+    "bcrypt_phpass",
     "hash_password",
     "is_shim",
     "render_config",

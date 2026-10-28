@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
+from .. import __version__
 from ..config import SiteConfig, TargetSpec
+from ..lockfile import load_lock, lock_sha256
+from ..util import iso_utc, run
 
 
 @dataclass
@@ -13,6 +17,24 @@ class DeployOptions:
     no_build: bool = False
     skip_backup: bool = False
     skip_verify: bool = False
+    verify_remote: bool = False  # sftp only: stat every deployed file (design §10.3)
+
+
+def release_info(cfg: SiteConfig, spec: TargetSpec) -> dict[str, Any]:
+    """What was deployed: git commit + dirty flag, tool version, lock hash, core version."""
+    lock = load_lock(cfg.lock_file)
+    commit = run(["git", "rev-parse", "HEAD"], cwd=cfg.root, check=False)
+    status = run(["git", "status", "--porcelain"], cwd=cfg.root, check=False)
+    return {
+        "site": cfg.site.slug,
+        "target": spec.name,
+        "git_commit": commit.stdout.decode().strip() if commit.returncode == 0 else None,
+        "git_dirty": bool(status.stdout.strip()) if status.returncode == 0 else None,
+        "tool_version": __version__,
+        "lock_sha256": lock_sha256(cfg.lock_file),
+        "core_version": lock.core.version if lock.core else None,
+        "deployed_at": iso_utc(),
+    }
 
 
 class Target:
