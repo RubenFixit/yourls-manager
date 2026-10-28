@@ -430,3 +430,24 @@ version, `<rev>` counts from 1 per YOURLS version, e.g. `v1.10.6-1`, `v1.10.6-2-
 - site.toml: `accept = "release"` on prod; commented `staging` example with `accept = "any"`.
 - Site README: release flow (`ym release --rc`, test on staging, `ym release --promote`), tag
   scheme, `deployed/<target>` markers; replaces the `vYYYY.MM.DD` advice.
+
+## 12. Compatibility with YOURLS-PluginManager (planned, not started)
+
+Request: support https://github.com/gioxx/YOURLS-PluginManager (a plugin that manages
+plugins from the YOURLS admin). ym should read and update that plugin's manifest file as
+well as its own `site.toml` / `yourls.lock.json`, and keep the two in sync on deploy.
+
+Open questions, to settle first by reading that repo:
+- Manifest location, format and fields (name, source URL, version/ref, active state?), and
+  whether it lives in the web root (deployed) or the database.
+- Direction of sync: is site.toml the source of truth (ym writes the manifest at build/deploy),
+  or can changes made in the admin through PluginManager flow back into site.toml (e.g.
+  read the live manifest on deploy/adopt and report or import differences)?
+- How PluginManager installs plugins (download into user/plugins?) and how that interacts
+  with ym deleting files it didn't deploy (rsync --delete vs the sftp manifest).
+- Whether ym should vendor PluginManager itself as a regular `[[plugins]]` entry.
+
+Likely shape: a `plugin_manager` adapter that maps `[[plugins]]` <-> manifest entries,
+writes the manifest into `dist/` at build time, reads the deployed manifest during
+`ym adopt` / before `ym deploy` to detect admin-side changes, and `ym plugin add/remove/
+enable/disable` keep both in step.
