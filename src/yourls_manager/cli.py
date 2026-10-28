@@ -205,11 +205,30 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--dry-run", action="store_true", help="analyze and print the plan only")
 
-    sub.add_parser(
+    p = sub.add_parser(
         "setup",
         parents=[common],
-        help="interactive wizard: new site or adopt an existing install",
-        description="Guided onboarding (needs a terminal). Prints each equivalent command.",
+        help="interactive wizard: new site or adopt an existing install (resumable)",
+        description=(
+            "Guided onboarding (needs a terminal). Prints each equivalent command. Progress is"
+            " saved, so running it again after an error resumes where it stopped."
+        ),
+    )
+    p.add_argument("dir", nargs="?", type=Path, metavar="DIR", help="site repo to resume")
+
+    p = sub.add_parser(
+        "ssh-setup",
+        parents=[common],
+        help="check SSH key login to a target; create and install a key if needed",
+        description=(
+            "ym runs ssh non-interactively (BatchMode), so targets need key authentication."
+            " This checks it and otherwise runs ssh-keygen and ssh-copy-id for you"
+            " (asking for the SSH password once)."
+        ),
+    )
+    p.add_argument("target")
+    p.add_argument(
+        "--key", type=Path, metavar="PATH", help="private key path (default: ~/.ssh/id_ed25519)"
     )
 
 
@@ -251,7 +270,22 @@ def _dispatch(args: argparse.Namespace) -> int:
         return EXIT_OK
 
     if cmd == "setup":
-        return _setup()
+        return _setup(args.dir)
+
+    if cmd == "ssh-setup":
+        from .sshsetup import ssh_setup
+
+        cfg = _load(args)
+        spec = cfg.target(args.target)
+        if not spec.is_local and not (sys.stdin.isatty() and sys.stdout.isatty()):
+            from .sshsetup import check_ssh
+
+            if check_ssh(spec).ok:
+                console.info("key authentication works")
+                return EXIT_OK
+            raise UsageError("`ym ssh-setup` needs a terminal to create or install a key")
+        ok = ssh_setup(spec, confirm=_confirm, key=args.key)
+        return EXIT_OK if ok else EXIT_ERROR
 
     if cmd == "verify":
         from .verify import verify
@@ -364,7 +398,16 @@ def _dispatch(args: argparse.Namespace) -> int:
     raise YMError(f"unknown command {cmd}")  # pragma: no cover
 
 
-def _setup() -> int:
+def _confirm(question: str) -> bool:
+    while True:
+        answer = input(f"{question} [Y/n]: ").strip().lower()
+        if answer in ("", "y", "yes"):
+            return True
+        if answer in ("n", "no"):
+            return False
+
+
+def _setup(start: Path | None = None) -> int:
     from .wizard import run_wizard
 
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
@@ -378,7 +421,7 @@ def _setup() -> int:
         answer = input(f"{question}{suffix}: ")
         return answer if answer.strip() else (default or "")
 
-    return run_wizard(ask, invoke=main).exit_code
+    return run_wizard(ask, invoke=main, start=start).exit_code
 
 
 def main(argv: Sequence[str] | None = None) -> int:

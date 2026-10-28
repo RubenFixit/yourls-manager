@@ -8,7 +8,15 @@ from pathlib import Path
 import pytest
 
 from yourls_manager.cli import main
-from yourls_manager.wizard import run_wizard
+from yourls_manager.wizard import SetupState, run_wizard
+
+
+@pytest.fixture(autouse=True)
+def _isolated_wizard(monkeypatch, tmp_path):
+    """No real ssh checks; setup state goes to a temp dir."""
+    monkeypatch.setitem(run_wizard.__kwdefaults__, "ssh_ok", lambda s, t: True)
+    monkeypatch.setitem(run_wizard.__kwdefaults__, "home", tmp_path / "state")
+
 
 PROD = """
 [deploy.targets.prod]
@@ -46,6 +54,7 @@ class FakeYm:
         if argv[0] == "new":
             dest = Path(argv[1])
             dest.mkdir(parents=True)
+            (dest / ".git").mkdir()  # real `ym new` runs git init
             (dest / "site.toml").write_text(
                 textwrap.dedent(
                     """\
@@ -111,7 +120,7 @@ def test_adopt_stop_to_configure_prod(tmp_path):
     ym = FakeYm(prod=False)
     res = run_wizard(Script(["adopt", "s", ""]), invoke=ym, cwd=tmp_path)
     assert len(ym.calls) == 1
-    assert any("adopt --from-target prod" in r for r in res.remaining)
+    assert res.resumable and any("ym setup" in r for r in res.remaining)
 
 
 def test_config_exists_skips_server_config(tmp_path):
@@ -123,7 +132,7 @@ def test_config_exists_skips_server_config(tmp_path):
 
 def test_invalid_answers_reprompt(tmp_path):
     ym = FakeYm(prod=True)
-    ask = Script(["what", "new", "s", "maybe", "n", "n"])
+    ask = Script(["what", "new", "s", "maybe", "n"])
     run_wizard(ask, invoke=ym, config_exists=lambda s, t: False, cwd=tmp_path)
     assert len(ym.calls) == 1 and not ask.answers
 
@@ -140,9 +149,100 @@ def test_setup_requires_tty(capsys):
     assert "terminal" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("cmd", ["new", "template-update", "server-config", "adopt", "setup"])
+@pytest.mark.parametrize(
+    "cmd", ["new", "template-update", "server-config", "adopt", "setup", "ssh-setup"]
+)
 def test_help(cmd, capsys):
     with pytest.raises(SystemExit) as exc:
         main([cmd, "--help"])
     assert exc.value.code == 0
     assert f"ym {cmd}" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- resume
+
+
+def test_adopt_failure_then_resume(tmp_path, capsys):
+    ym = FakeYm(prod=True, fail="adopt")
+    res = run_wizard(Script(["adopt", "s", "y"]), invoke=ym, cwd=tmp_path)
+    site = tmp_path / "s"
+    assert res.exit_code == 1 and res.resumable
+    assert "run `ym setup` again to resume" in capsys.readouterr().out
+    assert SetupState(site, tmp_path / "state").data["completed"] == ["new"]
+
+    # second run from an unrelated directory: offered via the remembered pointer
+    ym2 = FakeYm(prod=True)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    ask = Script(["", "y", "y", "n"])  # resume? adopt prod? server-config? dry run?
+    res = run_wizard(ask, invoke=ym2, config_exists=lambda s, t: False, cwd=elsewhere)
+    S = ["--site-dir", str(site)]
+    assert ym2.calls == [
+        [*S, "adopt", "--from-target", "prod"],
+        [*S, "server-config", "prod", "--from-existing"],
+    ]
+    assert res.exit_code == 0 and not ask.answers
+    st = SetupState(site, tmp_path / "state")
+    assert st.data["finished"] and st.data["completed"] == ["new", "adopt"]
+    assert not (tmp_path / "state" / "setup.json").exists()  # pointer cleared when finished
+
+
+def test_resume_skips_completed_adopt(tmp_path, capsys):
+    ym = FakeYm(prod=True, fail="server-config")
+    res = run_wizard(Script(["adopt", "s", "y", "y"]), invoke=ym,
+                     config_exists=lambda s, t: False, cwd=tmp_path)  # fmt: skip
+    assert res.exit_code == 1
+    site = tmp_path / "s"
+    ym2 = FakeYm(prod=True)
+    res = run_wizard(Script(["y", "n"]), invoke=ym2, config_exists=lambda s, t: False,
+                     cwd=tmp_path, start=site)  # fmt: skip
+    assert ym2.calls == [["--site-dir", str(site), "server-config", "prod", "--from-existing"]]
+    assert "already done: adopt" in capsys.readouterr().out
+
+
+def test_declining_resume_starts_fresh(tmp_path):
+    ym = FakeYm(prod=True, fail="adopt")
+    run_wizard(Script(["adopt", "s", "y"]), invoke=ym, cwd=tmp_path)
+    ym2 = FakeYm(prod=True)
+    ask = Script(["n", "new", "t", "n", "n"])
+    run_wizard(ask, invoke=ym2, config_exists=lambda s, t: False, cwd=tmp_path)
+    assert ym2.calls[0] == ["new", str(tmp_path / "t")]
+
+
+def test_start_dir_must_be_site(tmp_path):
+    from yourls_manager.util import YMError
+
+    with pytest.raises(YMError):
+        run_wizard(Script([]), invoke=FakeYm(prod=True), cwd=tmp_path, start=tmp_path)
+
+
+def test_existing_dest_is_reused(tmp_path):
+    ym = FakeYm(prod=True)
+    run_wizard(Script(["new", "s", "n", "n"]), invoke=ym, config_exists=lambda s, t: True,
+               cwd=tmp_path)  # fmt: skip
+    # state finished; a second fresh run pointing at the same dir does not re-run `ym new`
+    ym2 = FakeYm(prod=True)
+    run_wizard(Script(["new", "s", "n"]), invoke=ym2, config_exists=lambda s, t: True,
+               cwd=tmp_path)  # fmt: skip
+    assert all(c[0] != "new" for c in ym2.calls)
+
+
+# --------------------------------------------------------------------------- ssh step
+
+
+def test_ssh_setup_step_when_key_login_fails(tmp_path):
+    ym = FakeYm(prod=True)
+    ask = Script(["new", "s", "y", "n"])  # set up key? dry run?
+    res = run_wizard(ask, invoke=ym, config_exists=lambda s, t: True,
+                     ssh_ok=lambda s, t: False, cwd=tmp_path)  # fmt: skip
+    site = str(tmp_path / "s")
+    assert ym.calls[1] == ["--site-dir", site, "ssh-setup", "prod"]
+    assert res.exit_code == 0
+
+
+def test_ssh_setup_declined_is_resumable(tmp_path):
+    ym = FakeYm(prod=True)
+    res = run_wizard(Script(["new", "s", "n"]), invoke=ym, ssh_ok=lambda s, t: False,
+                     cwd=tmp_path)  # fmt: skip
+    assert res.resumable and any("ssh-setup prod" in r for r in res.remaining)
+    assert len(ym.calls) == 1

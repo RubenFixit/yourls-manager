@@ -72,8 +72,12 @@ class Runner:
             raise YMError(
                 f"[{self.describe()}] command failed ({proc.returncode}): {script}"
                 + (f"\n{err or out}" if (err or out) else "")
+                + self._failure_hint(proc.returncode, err)
             )
         return proc
+
+    def _failure_hint(self, returncode: int, stderr: str) -> str:
+        return ""
 
     def run(
         self,
@@ -154,6 +158,22 @@ class SshRunner(Runner):
             "-o",
             "ConnectTimeout=20",
         ]
+
+    def _failure_hint(self, returncode: int, stderr: str) -> str:
+        low = stderr.lower()
+        if returncode != 255:
+            return ""
+        if "permission denied" in low:
+            return (
+                "\nym needs SSH key authentication (it never prompts for passwords)."
+                " Set it up with: ym ssh-setup <target>"
+            )
+        if "host key verification failed" in low:
+            return (
+                "\nThe server's host key is not trusted yet. Run `ym ssh-setup <target>`"
+                f" or connect once with `ssh -p {self.port} {self.destination}`."
+            )
+        return ""
 
     def ssh_argv(self, script: str) -> list[str]:
         return [*self.ssh_base(), self.destination, "--", script]

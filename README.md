@@ -20,7 +20,8 @@ On the server:
 
 - **PHP ≥ 8.1** with the CLI, plus `mysqldump` and `gzip`
 - **MySQL or MariaDB**, with a database and user for YOURLS
-- SSH access with **key authentication** (`ym` never answers password prompts)
+- SSH access with **key authentication**. `ym` runs ssh non-interactively and never answers
+  password prompts; `ym ssh-setup prod` (or the wizard) creates and installs a key for you
 
 ### 2. Install the tool
 
@@ -44,6 +45,7 @@ Or run the steps yourself:
 ```sh
 ym new my-site                      # answer the template questions; vendors core + plugins, git init
 cd my-site
+ym ssh-setup prod                   # check key login; create + install a key if needed
 ym server-config prod               # write the server-local config (DB, cookie key, admin user)
 ym deploy prod --dry-run            # build and show what rsync would change
 ym deploy prod                      # deploy for real
@@ -103,9 +105,9 @@ ym deploy prod                      # backs up the DB, deploys, runs the DB upgr
 
 ### DreamHost notes
 
-- **SSH user:** in the panel, give the site's user *SSH* (shell) access. Then install your
-  key with `ssh-copy-id user@server.dreamhost.com`, and connect once by hand so the host is in
-  `~/.ssh/known_hosts`.
+- **SSH user:** in the panel, give the site's user *SSH* (shell) access. Then run
+  `ym ssh-setup prod`: it creates a key if you have none, installs it with `ssh-copy-id`
+  (asking for the SSH password once and to trust the host key) and checks that key login works.
 - **PHP CLI:** plain `php` is often older than the site's PHP. Set the target's `php` to a
   versioned binary such as `/usr/local/php83/bin/php` (or `php82`, `php84`, ...).
 - **Web root:** the domain directory in your home, e.g. `path = "go.example.com"`. The server
@@ -180,15 +182,23 @@ one it exits with code 2). It:
    where to put the site repo;
 2. runs `ym new` (the template asks its questions; when adopting it passes
    `--data include_example_plugins=false`);
-3. when adopting, asks for the source (the `prod` target if one is configured, or a local
+3. checks SSH key login to the `prod` target and, if it fails, offers `ym ssh-setup prod`;
+4. when adopting, asks for the source (the `prod` target if one is configured, or a local
    path) and runs `ym adopt`;
-4. offers `ym server-config prod` (with `--from-existing` when adopting and the server-local
+5. offers `ym server-config prod` (with `--from-existing` when adopting and the server-local
    config doesn't exist yet);
-5. offers `ym deploy prod --dry-run`;
-6. prints a summary of what it did and what's left to do.
+6. offers `ym deploy prod --dry-run`;
+7. prints a summary of what it did and what's left to do.
 
 Before each step it prints the equivalent command, so you can repeat or script the flow
 without the wizard.
+
+**Resuming.** Progress is saved in the site repo (`.git/ym-setup.json`, never committed) and
+the last unfinished site is remembered in `~/.local/state/yourls-manager/setup.json`
+(`$XDG_STATE_HOME` is honored). If a step fails or you stop early, fix the problem and run
+`ym setup` again from anywhere: it offers to resume and skips what's already done (the repo,
+a finished adoption; an existing server config is detected on the server). `ym setup DIR`
+resumes a specific site repo, including one you created with `ym new` by hand.
 
 ## Commands
 
@@ -202,7 +212,8 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 
 | Command | What it does |
 |---|---|
-| `ym setup` | Interactive wizard for a new site or an adoption (see [Setup wizard](#setup-wizard)). |
+| `ym setup [DIR]` | Interactive wizard for a new site or an adoption; resumable (see [Setup wizard](#setup-wizard)). |
+| `ym ssh-setup TARGET [--key PATH]` | Check non-interactive SSH key login to the target. If it fails: create a key with `ssh-keygen` (default `~/.ssh/id_ed25519`) when there is none, install it with `ssh-copy-id` (asks for the SSH password once and to trust the host key; falls back to plain `ssh` where `ssh-copy-id` is missing), then check again. Explains the fix when a passphrase-protected key isn't in an agent (`ssh-add`) or a non-default key needs an `~/.ssh/config` entry. |
 | `ym new [DEST] [--template SRC] [--vcs-ref REF] [--data K=V ...] [--defaults] [--no-vendor] [--no-git]` | Create a site repo from the template. The default template is `gh:RubenFixit/yourls-site-template`; override it with `--template` or the `YM_TEMPLATE` environment variable. Copier asks its questions unless you pass `--defaults`. Then `ym new` runs `ym core` + `ym sync` (skip with `--no-vendor`), runs `git init -b main` and makes the first commit (skip with `--no-git`; skipped with a warning if no Git identity is set), and tries `uv lock`. Refuses a non-empty `DEST`. |
 | `ym template-update [--vcs-ref REF] [--manager-version vX.Y.Z] [--defaults]` | Run `copier update` in the site repo. Refuses if the Git tree is dirty. `--manager-version` also bumps the yourls-manager pin. Then it tries `uv lock` and prints `git diff --stat` for you to review and commit. |
 | `ym server-config TARGET [--force] [--from-existing] [--db-host H] [--db-name N] [--db-user U] [--db-prefix P] [--admin-user U]` | Create the server-local config at the target's `config_file` from `server/config.example.php`. It fills in the DB settings, `YOURLS_SITE`, a fresh `YOURLS_COOKIEKEY` and one admin user. Passwords come from `YM_DB_PASSWORD` / `YM_ADMIN_PASSWORD` or a prompt, never from the command line. The admin password is hashed by the target's PHP. The file is written with mode 0600. It won't overwrite an existing file unless you pass `--force`, which first keeps a copy as `<file>.bak-<UTC timestamp>`. `--from-existing` copies the live install's `user/config.php` (or `includes/config.php`) to `config_file` instead; use it when adopting. |

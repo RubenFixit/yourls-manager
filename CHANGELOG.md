@@ -6,7 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.2.0] - Unreleased (date TBD)
+## [0.2.1] - 2026-10-28
+
+### Added
+
+- `ym ssh-setup TARGET`: check SSH key login; create a key (`ssh-keygen`) and install it
+  (`ssh-copy-id`, password asked once) when it fails.
+- `ym setup` resumes: progress is saved in `.git/ym-setup.json` and the last unfinished site is
+  remembered, so re-running `ym setup` (or `ym setup DIR`) continues after an error and skips
+  finished steps. The wizard also checks SSH key login and offers `ym ssh-setup`.
+
+### Changed
+
+- SSH "Permission denied" / host key errors now point to `ym ssh-setup`.
+
+## [0.2.0] - 2026-10-28
 
 Onboarding commands that work from the globally installed tool, before a site repo exists.
 
@@ -51,6 +65,7 @@ Onboarding commands that work from the globally installed tool, before a site re
   JSON-on-stdout contract.
 - Redirect verification from `tests/redirects.toml` plus a JSON health check.
 
-[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/RubenFixit/yourls-manager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/RubenFixit/yourls-manager/releases/tag/v0.1.0
