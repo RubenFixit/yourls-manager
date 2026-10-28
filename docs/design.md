@@ -356,3 +356,77 @@ README: SFTP target section, how deletes differ from rsync, manual admin steps, 
 A minimal plugin that writes YOURLS state into a JSON file in state_dir whenever it changes
 (hooks like `activated_plugin` / `deactivated_plugin`, plus on version change): active
 plugins, YOURLS version, DB version. ym would read it over SFTP for adopt/status/deploy checks.
+
+---
+
+## 11. Manager commands and release flow (v0.4, planned)
+
+### 11.1 Plugins: `ym plugin …`
+
+Catalog: `https://raw.githubusercontent.com/YOURLS/awesome/main/data/plugins.yml` (the
+awesome-yourls data file: `name`, `url`, `description`, `category`, `tags`, `official`,
+`tested`; categories block with labels). Cached in `$XDG_CACHE_HOME/yourls-manager/` for a
+day; `--refresh` forces a fetch. Parsing adds the `PyYAML` dependency.
+
+| Command | Behavior |
+|---|---|
+| `ym plugin search QUERY [--category SLUG] [--refresh] [--json]` | Rank catalog entries by matches in name, tags, description (name > tags > description). Show name, category, badges (official / tested), url, description; mark plugins already in `site.toml` (matched by repo URL). Empty QUERY with `--category` lists the category. |
+| `ym plugin add NAME\|URL [--name DIR] [--ref REF] [--path SUBDIR] [--inactive] [--no-sync]` | Resolve a catalog name (exact, then case-insensitive, then unique prefix) or take a git URL (GitHub web URLs like `.../tree/main/sub` are normalized to repo + ref + path). Find `plugin.php` in the fetched repo: root, else one level down; several → ask (TTY) or require `--path`. Read the header (Plugin Name, Version, Description, Requires). Directory name: `--name`, else the folder holding plugin.php, else the repo name, sanitized. Refuse duplicates (name or same repo+path). Append a `[[plugins]]` block to site.toml (text append, comments kept), then `ym sync --plugin NAME`. |
+| `ym plugin remove NAME [--keep-files]` | Remove the `[[plugins]]` block (text edit, exact block only) and, unless `--keep-files`, the vendored dir + lock entry. Prints: the next deploy deactivates it and deletes its files; plugin data (options/tables) is not removed. Core-bundled / overlay plugins: remove the entry only (overlay dir: tell the user to delete it). |
+| `ym plugin enable NAME` / `disable NAME` | Set `active = true/false` in the plugin's block (add the key if missing). |
+| `ym plugin list [--json]` | Name, source (repo / core / overlay), ref, locked commit, header version, active, update available (`--check` does the ls-remote; off by default to stay offline). |
+| `ym plugin apply TARGET` | The former `ym plugins TARGET` (kept as an alias). |
+
+All site.toml edits are textual and minimal; after editing, re-parse and fail (restoring
+the original) if the result doesn't validate.
+
+### 11.2 `ym update [--commit] [--core-only | --plugins-only]`
+
+`check` → `core --version latest` (if newer) → `sync --update` → `build` → summary of the lock
+diff (core from→to, each plugin old→new short sha, added/removed). Nothing to do → exit 0 with
+"up to date". `--commit`: commit `site.toml`, `yourls.lock.json`, `yourls/` with a message built
+from the summary ("Update YOURLS 1.10.5 → 1.10.6; timezones a1b2c3d → d4e5f6a").
+
+### 11.3 `ym doctor [TARGET]`
+
+Read-only report, one line per check with ok / warn / fail and a fix hint; exit 1 on any fail.
+Local: git, uv, rsync (only if an rsync target exists), ssh; site.toml valid; lock present and no
+drift; uncommitted changes; HEAD pushed. Per target (all targets, or the one given):
+login works (ssh-setup check / SFTP login), PHP CLI version (rsync), server config present,
+`url` is https, HTTP state (ok / install pending / upgrade pending), deployed commit vs HEAD
+(from release.json).
+
+### 11.4 Releases: `ym release`
+
+Tag scheme: `v<yourls>-<rev>` with optional `-rc.<n>`; `<yourls>` from the lock's core
+version, `<rev>` counts from 1 per YOURLS version, e.g. `v1.10.6-1`, `v1.10.6-2-rc.1`,
+`v1.10.6-2`, `v1.11.0-1`. ym parses these; other tags are ignored.
+
+| Command | Behavior |
+|---|---|
+| `ym release [--rc] [--push] [--dry-run] [--message TEXT]` | Requires a clean tree and no lock drift; builds. Next tag: after a final `vX-N` → `vX-(N+1)` (or `-rc.1` with `--rc`); while `vX-N-rc.k` exists without a final `vX-N` → `--rc` gives `rc.(k+1)`, plain release gives `vX-N` (equivalent to promote on HEAD). Creates an annotated tag; the tag message = release notes from the lock diff since the previous final tag plus `--message`. `--push` pushes the tag only. |
+| `ym release --promote [--push]` | Tag the commit of the newest rc as its final version (`vX-N-rc.k` → `vX-N`). Refuses if that final tag exists. |
+| `ym release --list` | Releases with dates and which targets have them deployed (from `deployed/<target>` markers). |
+
+### 11.5 Deploy policy and markers
+
+- Target key `accept = "any" | "release"` (default `"any"`; template sets prod to `"release"`).
+  `release`: HEAD must carry a final release tag (not rc) and the tree must be clean;
+  `--force` overrides with a loud warning (recorded in release.json as `forced: true`).
+- All targets: refuse a dirty tree unless `--allow-dirty` (recorded as `git_dirty: true`, as
+  today); warn when HEAD isn't on any remote branch.
+- release.json gains `tag` (exact tag at HEAD, if any). After a successful deploy ym moves the
+  local branch `deployed/<target>` to the deployed commit (`git branch -f`); with
+  `[release] push_markers = true` in site.toml it also pushes it (force). Dirty deploys don't
+  move the marker.
+- `ym releases TARGET` (P2) reads a server-side history (append-only `history.jsonl` next to
+  release.json; rsync and sftp).
+
+### 11.6 Template
+
+- Deploy workflow: tags `v*-rc.*` → target `staging` if site.toml defines it (else skip with a
+  notice); final tags `v*` without `-rc` → `prod`. The target policy is enforced by `ym deploy`
+  itself, so manual dispatch can't bypass it.
+- site.toml: `accept = "release"` on prod; commented `staging` example with `accept = "any"`.
+- Site README: release flow (`ym release --rc`, test on staging, `ym release --promote`), tag
+  scheme, `deployed/<target>` markers; replaces the `vYYYY.MM.DD` advice.
