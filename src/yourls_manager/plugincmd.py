@@ -117,3 +117,67 @@ def remove_plugin(cfg: SiteConfig, name: str, *, keep_files: bool = False) -> No
         "  the next deploy deactivates it and removes its files; plugin data (options,"
         " tables) stays in the database"
     )
+
+
+_WEB = re.compile(
+    r"^https://(?P<host>github\.com|gitlab\.com|codeberg\.org|bitbucket\.org)/"
+    r"(?P<repo>[^/]+/[^/#?]+?)(?:\.git)?"
+    r"(?:/(?:-/)?(?:tree|src|blob)/(?P<ref>[^/]+)(?:/(?P<path>[^?#]*))?)?/?(?:[?#].*)?$"
+)
+
+
+def parse_plugin_url(url: str) -> tuple[str, str | None, str | None]:
+    """Project page or clone URL -> (clone url, ref or None, subdir or None)."""
+    url = url.strip()
+    m = _WEB.match(url)
+    if m:
+        path = (m["path"] or "").strip("/") or None
+        if path and path.endswith("plugin.php"):
+            path = path.rsplit("/", 1)[0] if "/" in path else None
+        return f"https://{m['host']}/{m['repo']}.git", m["ref"], path
+    if re.match(r"^(https?://|ssh://|git@|file://)", url):
+        return url, None, None
+    raise UsageError(f"not a git or project URL: {url!r}")
+
+
+def add_plugin(
+    cfg: SiteConfig, url: str, *, name: str | None, ref: str | None, path: str | None,
+    active: bool,
+) -> str:  # fmt: skip
+    from .drift import plugin_dir
+    from .plugins import sync_plugins
+    from .vendor import rmtree
+
+    repo, url_ref, url_path = parse_plugin_url(url)
+    ref, path = ref or url_ref or "HEAD", path or url_path or "."
+    base = (
+        path.rstrip("/").rsplit("/", 1)[-1] if path != "." else repo.rstrip("/").rsplit("/", 1)[-1]
+    )
+    name = name or re.sub(r"[^A-Za-z0-9._-]+", "-", base.removesuffix(".git")).strip("-.")
+    for p in cfg.plugins:
+        if p.name == name or (p.repo == repo and p.path == path):
+            raise UsageError(f"already in site.toml as {p.name!r}")
+    original = cfg.site_file.read_text(encoding="utf-8")
+    block = f'\n[[plugins]]\nname   = "{name}"\nrepo   = "{repo}"\n'
+    if ref != "HEAD":
+        block += f'ref    = "{ref}"\n'
+    if path != ".":
+        block += f'path   = "{path}"\n'
+    block += f"active = {'true' if active else 'false'}\n"
+    cfg.site_file.write_text(original.rstrip("\n") + "\n" + block, encoding="utf-8")
+    try:
+        new_cfg = load_site(cfg.root)
+        sync_plugins(new_cfg, [name])
+        vend = plugin_dir(new_cfg, name)
+        if not (vend / "plugin.php").is_file():
+            subs = sorted(d.name for d in vend.iterdir() if (d / "plugin.php").is_file())
+            hint = f"; try --path {' or --path '.join(subs)}" if subs else ""
+            raise UsageError(f"no plugin.php at the top of {repo} ({path}){hint}")
+    except BaseException:
+        cfg.site_file.write_text(original, encoding="utf-8")
+        new = load_site(cfg.root)
+        if plugin_dir(new, name).is_dir() and name not in {p.name for p in cfg.plugins}:
+            rmtree(plugin_dir(new, name))
+        raise
+    console.info(f"{name}: added from {repo} (ref {ref}, path {path}); active = {active}")
+    return name

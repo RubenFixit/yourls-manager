@@ -106,6 +106,15 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("plugin", parents=[common], help="list plugins; enable or disable one")
     psub = p.add_subparsers(dest="plugin_cmd", metavar="ACTION", required=True)
     psub.add_parser("list", parents=[common], help="plugins in site.toml with source and lock")
+    q = psub.add_parser("add", parents=[common], help="add a plugin from a git or project URL")
+    q.add_argument(
+        "url",
+        help="clone URL or project page (GitHub/GitLab/Codeberg/Bitbucket)",
+    )
+    q.add_argument("--name", help="plugin directory name (default: from the URL)")
+    q.add_argument("--ref", help="branch, tag or commit (default: from the URL, else HEAD)")
+    q.add_argument("--path", help="subdirectory holding plugin.php")
+    q.add_argument("--inactive", action="store_true", help="add it with active = false")
     q = psub.add_parser("remove", parents=[common], help="remove a plugin from the site")
     q.add_argument("name")
     q.add_argument("--keep-files", action="store_true", help="keep the vendored copy")
@@ -438,6 +447,12 @@ def _dispatch(args: argparse.Namespace) -> int:
 
         if args.plugin_cmd == "list":
             list_plugins(cfg)
+            return EXIT_OK
+        if args.plugin_cmd == "add":
+            from .plugincmd import add_plugin
+
+            add_plugin(cfg, args.url, name=args.name, ref=args.ref, path=args.path,
+                       active=not args.inactive)  # fmt: skip
             return EXIT_OK
         if args.plugin_cmd == "remove":
             from .plugincmd import remove_plugin

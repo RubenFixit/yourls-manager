@@ -243,3 +243,46 @@ def test_plugin_remove(site, upstream, capsys):
     assert not (site / "yourls/user/plugins/p").exists()
     assert "plugin data" in capsys.readouterr().out
     assert main([*S, "plugin", "remove", "p"]) == 2
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        (
+            "https://github.com/YOURLS/timezones",
+            ("https://github.com/YOURLS/timezones.git", None, None),
+        ),
+        ("https://github.com/o/r.git", ("https://github.com/o/r.git", None, None)),
+        (
+            "https://github.com/joshp23/YOURLS-U-SRV/tree/master/usrv",
+            ("https://github.com/joshp23/YOURLS-U-SRV.git", "master", "usrv"),
+        ),
+        (
+            "https://github.com/o/r/blob/main/sub/plugin.php",
+            ("https://github.com/o/r.git", "main", "sub"),
+        ),
+        ("https://gitlab.com/g/r/-/tree/v2/x", ("https://gitlab.com/g/r.git", "v2", "x")),
+        (
+            "https://bitbucket.org/o/r/src/master/",
+            ("https://bitbucket.org/o/r.git", "master", None),
+        ),
+        ("git@github.com:o/r.git", ("git@github.com:o/r.git", None, None)),
+    ],
+)
+def test_parse_plugin_url(url, expected):
+    from yourls_manager.plugincmd import parse_plugin_url
+
+    assert parse_plugin_url(url) == expected
+
+
+def test_plugin_add(site, upstream, capsys):
+    S = ["--site-dir", str(site)]
+    mono = upstream("mono")
+    mono.commit({"plug-b/plugin.php": "<?php // b\n", "README.md": "x"})
+    assert main([*S, "plugin", "add", mono.url]) == 1  # no plugin.php at the top
+    assert "no plugin.php" in capsys.readouterr().err
+    assert "[[plugins]]" not in (site / "site.toml").read_text()  # rolled back
+    assert main([*S, "plugin", "add", mono.url, "--path", "plug-b", "--inactive"]) == 0
+    assert (site / "yourls/user/plugins/plug-b/plugin.php").is_file()
+    assert 'path   = "plug-b"\nactive = false' in (site / "site.toml").read_text()
+    assert main([*S, "plugin", "add", mono.url, "--path", "plug-b"]) == 2  # duplicate

@@ -10,6 +10,9 @@ All notable changes to this project are documented here. The format follows
 
 - `ym plugin list`, `ym plugin enable NAME`, `ym plugin disable NAME` (edits `active` in
   site.toml, keeping comments; applied on the next deploy).
+- `ym plugin add URL [--name] [--ref] [--path] [--inactive]`: add a plugin from a clone URL or
+  a GitHub/GitLab/Codeberg/Bitbucket project page (`/tree/<ref>/<dir>` sets ref and path);
+  rolled back if the plugin can't be vendored.
 - `ym plugin remove NAME [--keep-files]`: delete the plugin's `[[plugins]]` block and its
   vendored copy; the next deploy deactivates it and removes its files (its data stays).
 
