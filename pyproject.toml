@@ -1,0 +1,65 @@
+[project]
+name = "yourls-manager"
+dynamic = ["version"]
+description = "Reproducible, Git-managed YOURLS sites: vendor core and plugins, build, and deploy with one command."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Ruben Kackstaetter" }]
+requires-python = ">=3.11"
+dependencies = []
+keywords = ["yourls", "url-shortener", "deploy", "rsync", "php"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.urls]
+Homepage = "https://github.com/RubenFixit/yourls-manager"
+Issues = "https://github.com/RubenFixit/yourls-manager/issues"
+Changelog = "https://github.com/RubenFixit/yourls-manager/blob/main/CHANGELOG.md"
+
+[project.scripts]
+yourls-manager = "yourls_manager.cli:main"
+ym = "yourls_manager.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/yourls_manager/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/yourls_manager"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "docs", "README.md", "CHANGELOG.md", "LICENSE"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "network: needs internet access",
+    "php: needs a php CLI on PATH",
+    "mysql: needs a reachable MySQL/MariaDB server (opt-in via env)",
+    "rsync: needs rsync on PATH",
+]

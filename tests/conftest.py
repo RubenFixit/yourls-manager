@@ -1,0 +1,147 @@
+from __future__ import annotations
+
+import http.server
+import shutil
+import subprocess
+import textwrap
+import threading
+from pathlib import Path
+
+import pytest
+
+GIT_ENV = {
+    "GIT_AUTHOR_NAME": "Test",
+    "GIT_AUTHOR_EMAIL": "test@example.invalid",
+    "GIT_COMMITTER_NAME": "Test",
+    "GIT_COMMITTER_EMAIL": "test@example.invalid",
+    "GIT_CONFIG_NOSYSTEM": "1",
+}
+
+
+@pytest.fixture(autouse=True)
+def _git_identity(monkeypatch, tmp_path_factory):
+    for k, v in GIT_ENV.items():
+        monkeypatch.setenv(k, v)
+    # isolate from the developer's global git config
+    gcfg = tmp_path_factory.mktemp("gitcfg") / "gitconfig"
+    gcfg.write_text("[init]\n\tdefaultBranch = main\n")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gcfg))
+
+
+def git(cwd: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def write_files(root: Path, files: dict[str, str | bytes]) -> None:
+    for rel, content in files.items():
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, bytes):
+            p.write_bytes(content)
+        else:
+            p.write_text(textwrap.dedent(content))
+
+
+class FakeUpstream:
+    """A bare git repo served via file:// with a working clone for making commits."""
+
+    def __init__(self, base: Path, name: str):
+        self.work = base / f"{name}-work"
+        self.bare = base / f"{name}.git"
+        self.work.mkdir(parents=True)
+        git(self.work, "init", "-q", "-b", "main")
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(self.bare)], check=True)
+        git(self.work, "remote", "add", "origin", str(self.bare))
+
+    @property
+    def url(self) -> str:
+        return self.bare.as_uri()
+
+    def commit(
+        self,
+        files: dict[str, str | bytes],
+        message: str = "update",
+        tag: str | None = None,
+        remove: tuple[str, ...] = (),
+    ) -> str:
+        write_files(self.work, files)
+        for rel in remove:
+            (self.work / rel).unlink()
+        git(self.work, "add", "-A")
+        git(self.work, "commit", "-q", "-m", message)
+        if tag:
+            git(self.work, "tag", "-a", tag, "-m", tag)
+        git(self.work, "push", "-q", "origin", "main", "--tags")
+        return git(self.work, "rev-parse", "HEAD")
+
+
+@pytest.fixture
+def upstream(tmp_path):
+    base = tmp_path / "upstreams"
+    base.mkdir()
+
+    def make(name: str) -> FakeUpstream:
+        return FakeUpstream(base, name)
+
+    return make
+
+
+def core_files(version: str, db: str = "507") -> dict[str, str]:
+    return {
+        "includes/version.php": f"<?php\ndefine( 'YOURLS_VERSION', '{version}' );\n"
+        f"define( 'YOURLS_DB_VERSION', '{db}' );\n",
+        "includes/load-yourls.php": "<?php // stub\n",
+        "admin/index.php": f"<?php // admin {version}\n",
+        "yourls-loader.php": "<?php // loader\n",
+        "user/plugins/hyphens-in-urls/plugin.php": "<?php /* Plugin Name: Hyphens */\n",
+        "user/plugins/sample-plugin/plugin.php": "<?php /* Plugin Name: Sample */\n",
+        "LICENSE": "MIT\n",
+        "readme.html": "<html></html>\n",
+        "README.md": "# YOURLS\n",
+        "CHANGELOG.md": "changes\n",
+        "includes/vendor/lib/README.md": "nested md\n",
+        ".github/workflows/ci.yml": "on: push\n",
+        ".gitattributes": "* text=auto\n",
+        "tests/test.php": "<?php\n",
+    }
+
+
+needs_rsync = pytest.mark.skipif(shutil.which("rsync") is None, reason="rsync not installed")
+needs_php = pytest.mark.skipif(shutil.which("php") is None, reason="php CLI not installed")
+
+
+ROUTES = {
+    "/health.php": (200, None, b'{"ok": true}'),
+    "/g": (301, "https://git.example.org/", b""),
+    "/g/repo?ref=main": (301, "https://git.example.org/repo?ref=main", b""),
+    "/tmp": (302, "https://example.org/temp", b""),
+    "/": (200, None, b"<html>home</html>"),
+}
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    routes = ROUTES
+
+    def do_GET(self):
+        status, location, body = self.routes.get(self.path, (404, None, b"not found"))
+        self.send_response(status)
+        if location:
+            self.send_header("Location", location)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture
+def server():
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    t = threading.Thread(target=httpd.serve_forever, daemon=True)
+    t.start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}"
+    httpd.shutdown()
+    httpd.server_close()
