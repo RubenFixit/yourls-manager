@@ -1,3 +1,3 @@
 """yourls-manager: reproducible, Git-managed YOURLS sites."""
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

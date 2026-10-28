@@ -20,6 +20,11 @@ class DeployOptions:
     verify_remote: bool = False  # sftp only: stat every deployed file (design §10.3)
 
 
+# Set by the deploy policy check (release.check_deploy) for the current command: the
+# release tag at HEAD and whether the policy was overridden. Merged into release.json.
+DEPLOY_CONTEXT: dict[str, Any] = {}
+
+
 def release_info(cfg: SiteConfig, spec: TargetSpec) -> dict[str, Any]:
     """What was deployed: git commit + dirty flag, tool version, lock hash, core version."""
     lock = load_lock(cfg.lock_file)
@@ -34,6 +39,7 @@ def release_info(cfg: SiteConfig, spec: TargetSpec) -> dict[str, Any]:
         "lock_sha256": lock_sha256(cfg.lock_file),
         "core_version": lock.core.version if lock.core else None,
         "deployed_at": iso_utc(),
+        **DEPLOY_CONTEXT,
     }
 
 

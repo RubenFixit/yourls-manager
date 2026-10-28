@@ -192,6 +192,44 @@ assets) are never touched.
 CI uses the version pinned in the site's `pyproject.toml`. Bump that pin with
 `ym template-update --manager-version vX.Y.Z`.
 
+## Releases and deploy policy
+
+**Tags.** A release is `v<YOURLS version>-<revision>`: `v1.10.6-1`, `v1.10.6-2`, ... The
+revision counts releases of this site and restarts at 1 when YOURLS changes (`v1.11.0-1`).
+Release candidates add `-rc.<n>`: `v1.10.6-3-rc.1`. `ym release` works out the next tag from
+the locked YOURLS version and the existing tags, so several releases a day are fine.
+
+```sh
+ym release --dry-run          # show the next tag and its notes
+ym release --rc --push        # v1.10.6-3-rc.1: CI deploys it to staging (if defined)
+ym release --promote --push   # v1.10.6-3 on the rc's commit: CI deploys it to prod
+ym release --push             # or tag the next final release straight away
+ym release --list             # releases, dates, and where each is deployed
+```
+
+The annotated tag carries release notes: YOURLS and plugin changes since the previous final
+release (from `yourls.lock.json`), your `-m` text and the commit subjects.
+
+**Deploy policy.** Each target has `accept = "any"` (default) or `"release"`:
+
+| | `accept = "any"` | `accept = "release"` |
+|---|---|---|
+| Untagged or rc commit | deploys | refused (`--force` overrides) |
+| Final release tag at HEAD | deploys | deploys |
+| Uncommitted changes | refused unless `--allow-dirty` | refused (`--force` overrides) |
+
+The template sets `accept = "release"` on prod. Overrides are recorded in the server's
+`release.json` (`forced`, `git_dirty`, `tag`), and ym warns when HEAD isn't pushed yet.
+
+**Deployment markers.** Deployments aren't tagged (they aren't versions). After each
+deploy of a clean tree ym moves the local branch `deployed/<target>` to the deployed commit,
+so `git log --decorate` shows what's live where. Set `[release] push_markers = true` in
+site.toml to push it as well.
+
+**CI.** The template's deploy workflow deploys final tags to `prod` and `-rc.<n>` tags to
+`staging` (skipped when site.toml has no staging target). The policy is enforced by
+`ym deploy` itself, so manual workflow runs can't bypass it.
+
 ## Setup wizard
 
 `ym setup` is an interactive front end to the commands above. It needs a terminal (without
@@ -247,9 +285,10 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 | `ym core [--version V\|latest] [--dry-run] [--force]` | Fetch core at a tag and replace `yourls/`, keeping managed plugin dirs and applying `exclude`. Updates the lock and `[core].version`. |
 | `ym sync [--plugin NAME ...] [--update] [--dry-run] [--force]` | Vendor plugins into `yourls/user/plugins/<name>`. By default it uses the locked commit while the plugin's repo/ref/path are unchanged. `--update` re-resolves refs. A managed plugin that was removed from `site.toml` has its directory deleted. |
 | `ym build [--out DIR] [--allow-drift]` | Clean `dist/`, then copy `yourls/` and `overlay/` into it. Refuses to build if `yourls/` doesn't match the lock. `-v` lists each overlay override. |
-| `ym deploy TARGET [--dry-run] [--no-build] [--skip-backup] [--skip-verify] [--verify-remote]` | `rsync` targets: build → preflight → upload helper → DB backup → rsync → DB upgrade → plugins → record → verify. `--dry-run` shows rsync's itemized changes and stops. `sftp` targets: see [SFTP targets](#sftp-targets); `--verify-remote` (sftp only) also checks every deployed file on the server. |
+| `ym deploy TARGET [--dry-run] [--no-build] [--skip-backup] [--skip-verify] [--verify-remote] [--allow-dirty] [--force]` | `rsync` targets: build → preflight → upload helper → DB backup → rsync → DB upgrade → plugins → record → verify. `--dry-run` shows rsync's itemized changes and stops. `sftp` targets: see [SFTP targets](#sftp-targets); `--verify-remote` (sftp only) also checks every deployed file on the server. Refuses uncommitted changes unless `--allow-dirty`; targets with `accept = "release"` only take a final release tag (`--force` overrides, recorded). Afterwards moves the `deployed/<target>` branch. See [Releases and deploy policy](#releases-and-deploy-policy). |
 | `ym verify TARGET` / `ym verify --url URL` | Check `GET /health.php` (expects `{"ok": true}`), then each case in `tests/redirects.toml`. Redirects are not followed. |
 | `ym plugins TARGET` | Make the active plugin set on the target exactly the set marked `active` in `site.toml`. Not available for `sftp` targets (it prints what to activate in the admin UI). |
+| `ym release [--rc \| --promote \| --list] [--push] [--dry-run] [-m TEXT]` | Tag the next release `v<yourls>-<rev>` (`--rc`: `-rc.<n>`; `--promote`: the newest rc's final) on a clean, drift-free tree, with release notes from the lock diff. `--list` shows releases and which targets have them deployed. |
 
 `ym core` and `ym sync` won't overwrite vendored files that have uncommitted Git changes,
 because Git is your backup. Commit first or pass `--force`.

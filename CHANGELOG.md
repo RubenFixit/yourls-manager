@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-28
+
+Releases and deploy policy.
+
+### Added
+
+- `ym release`: tags `v<yourls>-<rev>` (`--rc` for `-rc.<n>`, `--promote` to finalize the
+  newest rc) on a clean, drift-free tree, with release notes from the lock diff and commit
+  log; `--push`, `--dry-run`, `-m`, `--list` (releases and where they're deployed).
+- Target key `accept = "any" | "release"`: `release` targets only deploy final release tags.
+- `ym deploy --allow-dirty` and `--force`; release.json records `tag` and `forced`.
+- After a deploy of a clean tree, the local branch `deployed/<target>` points at the deployed
+  commit; `[release] push_markers = true` pushes it.
+
+### Changed
+
+- `ym deploy` refuses uncommitted changes unless `--allow-dirty`, and warns when HEAD isn't
+  on a remote branch.
+
 ## [0.3.0] - 2026-10-28
 
 SFTP targets: deploy and adopt sites on hosts that offer SFTP but no shell.
@@ -97,7 +116,8 @@ Onboarding commands that work from the globally installed tool, before a site re
   JSON-on-stdout contract.
 - Redirect verification from `tests/redirects.toml` plus a JSON health check.
 
-[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/RubenFixit/yourls-manager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.1.0...v0.2.0

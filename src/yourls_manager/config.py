@@ -88,6 +88,7 @@ class TargetSpec:
     backup_keep: int = 10
     url: str = ""
     state_dir: str = ""  # sftp only: manifest + release.json (design §10.3)
+    accept: str = "any"  # deploy policy (design §11.5): "any" | "release"
     given: frozenset[str] = frozenset()  # keys set explicitly in site.toml
 
     @property
@@ -108,6 +109,7 @@ class SiteConfig:
     build: BuildSpec
     targets: dict[str, TargetSpec]
     warnings: list[str] = field(default_factory=list)
+    push_markers: bool = False  # [release] push_markers (design §11.5)
 
     @property
     def site_file(self) -> Path:
@@ -371,6 +373,10 @@ def parse_site(data: dict[str, Any], root: Path) -> SiteConfig:
         targets[tname] = _parse_target(tname, traw, site, warnings)
     deploy_r.finish()
 
+    release_r = _Reader(top._get("release", False) or {}, "release", warnings)
+    push_markers = release_r.bool("push_markers", False)
+    release_r.finish()
+
     top.finish()
     return SiteConfig(
         root=root,
@@ -380,6 +386,7 @@ def parse_site(data: dict[str, Any], root: Path) -> SiteConfig:
         build=build,
         targets=targets,
         warnings=warnings,
+        push_markers=push_markers,
     )
 
 
@@ -414,6 +421,9 @@ def _parse_target(name: str, raw: Any, site: SiteInfo, warnings: list[str]) -> T
     protect = r.str_list("protect")
     backup_keep = r.int("backup_keep", 10, lo=1, hi=10000)
     url = _check_url(f"{prefix}.url", r.str("url", site.url))
+    accept = r.str("accept", "any")
+    if accept not in ("any", "release"):
+        raise ConfigError(f"{prefix}.accept", f"must be 'any' or 'release', got {accept!r}")
     state_dir = ""
     checked = [("path", path), ("config_file", config_file)]
     if ttype == "sftp":
@@ -460,6 +470,7 @@ def _parse_target(name: str, raw: Any, site: SiteInfo, warnings: list[str]) -> T
         backup_keep=backup_keep,
         url=url,
         state_dir=state_dir,
+        accept=accept,
         given=frozenset(k for k in r.seen if k in r.table),
     )
 

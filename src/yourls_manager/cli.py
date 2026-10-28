@@ -86,6 +86,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--skip-verify", action="store_true", help="do not run verify afterwards")
     p.add_argument(
+        "--allow-dirty", action="store_true", help="deploy even with uncommitted changes"
+    )
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help='override the target\'s accept = "release" policy (recorded in release.json)',
+    )
+    p.add_argument(
         "--verify-remote",
         action="store_true",
         help="sftp targets: stat every deployed file and re-upload ones changed on the server",
@@ -94,6 +102,19 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("verify", parents=[common], help="health check + redirect tests")
     p.add_argument("target", nargs="?")
     p.add_argument("--url", help="base URL to check instead of a target's url")
+
+    p = sub.add_parser(
+        "release",
+        parents=[common],
+        help="tag a release: v<yourls>-<rev>[-rc.<n>] with notes from the lock diff",
+    )
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--rc", action="store_true", help="tag a release candidate")
+    g.add_argument("--promote", action="store_true", help="tag the newest rc as its final")
+    g.add_argument("--list", action="store_true", help="list releases and where they're deployed")
+    p.add_argument("--push", action="store_true", help="push the new tag to origin")
+    p.add_argument("--dry-run", action="store_true", help="show the tag and notes only")
+    p.add_argument("-m", "--message", help="extra text for the release notes")
 
     p = sub.add_parser("plugins", parents=[common], help="apply the active plugin set on a target")
     p.add_argument("target")
@@ -370,10 +391,15 @@ def _dispatch(args: argparse.Namespace) -> int:
 
     if cmd == "deploy":
         from .deploy import DeployOptions, get_target
+        from .deploy.base import DEPLOY_CONTEXT
+        from .release import check_deploy, move_marker
 
         target = get_target(cfg, args.target)
         if args.verify_remote and not target.spec.is_sftp:
             raise UsageError("--verify-remote applies to sftp targets only")
+        DEPLOY_CONTEXT.update(
+            check_deploy(cfg, target.spec, allow_dirty=args.allow_dirty, force=args.force)
+        )
         ok = target.deploy(
             DeployOptions(
                 dry_run=args.dry_run,
@@ -383,7 +409,25 @@ def _dispatch(args: argparse.Namespace) -> int:
                 verify_remote=args.verify_remote,
             )
         )
+        if not args.dry_run:
+            move_marker(cfg, target.spec)  # files are deployed even if verify failed
         return EXIT_OK if ok else EXIT_ERROR
+
+    if cmd == "release":
+        from .release import list_releases, release
+
+        if args.list:
+            list_releases(cfg)
+            return EXIT_OK
+        release(
+            cfg,
+            rc=args.rc,
+            promote=args.promote,
+            push=args.push,
+            dry_run=args.dry_run,
+            message=args.message,
+        )
+        return EXIT_OK
 
     if cmd == "plugins":
         from .deploy import get_target
