@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `ym plugin list`, `ym plugin enable NAME`, `ym plugin disable NAME` (edits `active` in
+  site.toml, keeping comments; applied on the next deploy).
+
 ## [0.4.1] - 2026-10-28
 
 ### Added

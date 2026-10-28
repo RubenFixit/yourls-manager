@@ -201,3 +201,24 @@ def test_update(site, capsys):
     assert git(site, "status", "--porcelain") == ""
     assert main([*S, "update"]) == 0
     assert "everything is up to date" in capsys.readouterr().out
+
+
+def test_plugin_enable_disable_list(site, capsys):
+    S = ["--site-dir", str(site)]
+    toml = site / "site.toml"
+    toml.write_text(
+        toml.read_text()
+        + '\n[[plugins]]\nname = "hyphens"   # bundled\n\n[[plugins]]\nname = "tz"\n'
+        "active = true  # keep\n"
+    )
+    assert main([*S, "plugin", "disable", "tz"]) == 0
+    assert "active = false  # keep" in toml.read_text()
+    assert main([*S, "plugin", "disable", "hyphens"]) == 0
+    assert 'name = "hyphens"   # bundled\nactive = false\n' in toml.read_text()
+    assert main([*S, "plugin", "enable", "hyphens"]) == 0
+    assert main([*S, "plugin", "enable", "hyphens"]) == 0
+    assert "already active" in capsys.readouterr().out
+    assert main([*S, "plugin", "enable", "nope"]) == 2
+    assert main([*S, "plugin", "list"]) == 0
+    out = capsys.readouterr().out
+    assert "hyphens" in out and "tz " in out and "core" in out

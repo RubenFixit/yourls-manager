@@ -103,6 +103,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("target", nargs="?")
     p.add_argument("--url", help="base URL to check instead of a target's url")
 
+    p = sub.add_parser("plugin", parents=[common], help="list plugins; enable or disable one")
+    psub = p.add_subparsers(dest="plugin_cmd", metavar="ACTION", required=True)
+    psub.add_parser("list", parents=[common], help="plugins in site.toml with source and lock")
+    for act in ("enable", "disable"):
+        q = psub.add_parser(act, parents=[common], help=f"{act} a plugin in site.toml")
+        q.add_argument("name")
+
     p = sub.add_parser(
         "update",
         parents=[common],
@@ -422,6 +429,19 @@ def _dispatch(args: argparse.Namespace) -> int:
         if not args.dry_run:
             move_marker(cfg, target.spec)  # files are deployed even if verify failed
         return EXIT_OK if ok else EXIT_ERROR
+
+    if cmd == "plugin":
+        from .plugincmd import list_plugins, set_active
+
+        if args.plugin_cmd == "list":
+            list_plugins(cfg)
+            return EXIT_OK
+        on = args.plugin_cmd == "enable"
+        if set_active(cfg, args.name, on):
+            console.info(f"{args.name}: active = {str(on).lower()} (applied on the next deploy)")
+        else:
+            console.info(f"{args.name}: already {'active' if on else 'inactive'}")
+        return EXIT_OK
 
     if cmd == "update":
         from .update import update
