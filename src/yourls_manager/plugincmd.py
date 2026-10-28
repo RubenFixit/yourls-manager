@@ -73,3 +73,47 @@ def list_plugins(cfg: SiteConfig) -> None:
     widths = [max(len(r[i]) for r in rows) for i in range(4)]
     for r in rows:
         console.info("  ".join(c.ljust(w) for c, w in zip(r, widths, strict=False)) + "  " + r[4])
+
+
+def remove_plugin(cfg: SiteConfig, name: str, *, keep_files: bool = False) -> None:
+    """Delete the plugin's [[plugins]] block; unless keep_files, drop its vendored copy."""
+    from .plugins import sync_plugins
+
+    spec = cfg.plugin(name)
+    if spec is None:
+        raise UsageError(f"no plugin named {name!r} in site.toml (see `ym plugin list`)")
+    path = cfg.site_file
+    original = path.read_text(encoding="utf-8")
+    lines = original.splitlines(keepends=True)
+    block = None
+    for i, line in enumerate(lines):
+        if _PLUGINS.match(line):
+            j = i + 1
+            while j < len(lines) and not _TABLE.match(lines[j]):
+                j += 1
+            if any(_name_re(name).match(x) for x in lines[i + 1 : j]):
+                block = (i, j)
+    if block is None:
+        raise UsageError(f"could not find the [[plugins]] block for {name!r} in site.toml")
+    start, end = block
+    while end > start + 1 and lines[end - 1].lstrip().startswith("#"):
+        end -= 1  # comment lines just before the next table belong to it
+    del lines[start:end]
+    path.write_text("".join(lines), encoding="utf-8")
+    try:
+        new_cfg = load_site(cfg.root)
+        if new_cfg.plugin(name) is not None:
+            raise UsageError("edit did not take effect")
+    except Exception:
+        path.write_text(original, encoding="utf-8")
+        raise
+    console.info(f"{name}: removed from site.toml")
+    if spec.repo and not keep_files:
+        sync_plugins(new_cfg, None)  # deletes vendored dirs of plugins no longer listed
+    overlay = cfg.overlay_dir / "user/plugins" / name
+    if overlay.is_dir():
+        console.info(f"  its overlay copy stays: delete {overlay} if you don't need it")
+    console.info(
+        "  the next deploy deactivates it and removes its files; plugin data (options,"
+        " tables) stays in the database"
+    )

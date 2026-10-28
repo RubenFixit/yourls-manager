@@ -291,6 +291,7 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 | `ym release [--rc \| --promote \| --list] [--push] [--dry-run] [-m TEXT]` | Tag the next release `v<yourls>-<rev>` (`--rc`: `-rc.<n>`; `--promote`: the newest rc's final) on a clean, drift-free tree, with release notes from the lock diff. `--list` shows releases and which targets have them deployed. |
 | `ym update [--commit] [--core-only \| --plugins-only]` | Routine update in one step: core to the latest stable release, plugins to their newest commits, build, then a summary of the changes (`--commit` commits them with that summary as the message). |
 | `ym plugin list` / `ym plugin enable NAME` / `ym plugin disable NAME` | List plugins with source, ref and locked commit; switch a plugin's `active` flag in `site.toml` (comments kept). The next deploy applies it. |
+| `ym plugin remove NAME [--keep-files]` | Delete the plugin's `[[plugins]]` block from `site.toml` and its vendored copy (refused if that copy has uncommitted changes). The next deploy deactivates it and removes its files; plugin data (options, tables) stays in the database. |
 
 `ym core` and `ym sync` won't overwrite vendored files that have uncommitted Git changes,
 because Git is your backup. Commit first or pass `--force`.

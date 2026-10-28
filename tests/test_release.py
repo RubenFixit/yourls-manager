@@ -222,3 +222,24 @@ def test_plugin_enable_disable_list(site, capsys):
     assert main([*S, "plugin", "list"]) == 0
     out = capsys.readouterr().out
     assert "hyphens" in out and "tz " in out and "core" in out
+
+
+def test_plugin_remove(site, upstream, capsys):
+    S = ["--site-dir", str(site)]
+    plug = upstream("plug")
+    plug.commit({"plugin.php": "<?php // p\n"})
+    toml = site / "site.toml"
+    toml.write_text(
+        toml.read_text() + f'\n[[plugins]]\nname = "p"\nrepo = "{plug.url}"\n\n'
+        '# the next one\n[[plugins]]\nname = "hyphens"\n'
+    )
+    assert main([*S, "sync"]) == 0
+    assert (site / "yourls/user/plugins/p/plugin.php").is_file()
+    git(site, "add", "-A")
+    git(site, "commit", "-q", "-m", "add p")
+    assert main([*S, "plugin", "remove", "p"]) == 0
+    text = toml.read_text()
+    assert 'name = "p"' not in text and '# the next one\n[[plugins]]\nname = "hyphens"' in text
+    assert not (site / "yourls/user/plugins/p").exists()
+    assert "plugin data" in capsys.readouterr().out
+    assert main([*S, "plugin", "remove", "p"]) == 2

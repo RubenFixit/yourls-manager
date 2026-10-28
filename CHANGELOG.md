@@ -10,6 +10,8 @@ All notable changes to this project are documented here. The format follows
 
 - `ym plugin list`, `ym plugin enable NAME`, `ym plugin disable NAME` (edits `active` in
   site.toml, keeping comments; applied on the next deploy).
+- `ym plugin remove NAME [--keep-files]`: delete the plugin's `[[plugins]]` block and its
+  vendored copy; the next deploy deactivates it and removes its files (its data stays).
 
 ## [0.4.1] - 2026-10-28
 
