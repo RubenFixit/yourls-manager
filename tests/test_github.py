@@ -203,6 +203,20 @@ def test_set_ci_existing_key(site):
     assert not ci.set_ci(load_site(site), "prod")
 
 
+def test_set_ci_template_hint(site):
+    toml = site / "site.toml"
+    text = toml.read_text().replace(
+        'user = "u"\n',
+        'user = "u"\n# ci          = true     # deploy from GitHub Actions\n#\n'
+        "# [deploy.targets.x]\n# ci = true\n",
+    )
+    toml.write_text(text)
+    assert ci.set_ci(load_site(site), "prod")
+    new = toml.read_text()
+    assert 'user = "u"\nci          = true     # deploy from GitHub Actions\n#\n' in new
+    assert "# [deploy.targets.x]\n# ci = true\n" in new  # other tables' examples untouched
+
+
 def test_ci_local_target_rejected(site):
     toml = site / "site.toml"
     toml.write_text(toml.read_text().replace('path = "/srv/www"', 'path = "/srv/www"\nci = true'))

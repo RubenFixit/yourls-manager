@@ -268,6 +268,7 @@ def find_repo(cfg: SiteConfig, gh: Gh, repo: str | None, *, confirm: Confirm | N
 
 _TABLE = re.compile(r"^\s*\[")
 _CI = re.compile(r"^(\s*ci\s*=\s*)(true|false)(.*)$")
+_CI_HINT = re.compile(r"^(\s*)#\s*ci(\s*=\s*)(?:true|false)(.*\n?)$", re.S)
 
 
 def set_ci(cfg: SiteConfig, target: str) -> bool:
@@ -285,20 +286,31 @@ def set_ci(cfg: SiteConfig, target: str) -> bool:
     end = start + 1
     while end < len(lines) and not _TABLE.match(lines[end]):
         end += 1
+    commented = None  # the template's `# ci = true ...` hint, within the table's own lines
+    for k in range(start + 1, end):
+        if lines[k].strip() in ("", "#"):
+            break
+        if _CI_HINT.match(lines[k]):
+            commented = k
+            break
     for k in range(start + 1, end):
         m = _CI.match(lines[k].rstrip("\n"))
         if m:
             lines[k] = f"{m[1]}true{m[3]}\n"
             break
     else:
-        last = end
-        while last > start + 1 and not lines[last - 1].strip():
-            last -= 1  # keep blank lines (and comments of the next table) after the key
-        while last > start + 1 and lines[last - 1].lstrip().startswith("#"):
-            last -= 1
-        if last > start + 1 and not lines[last - 1].endswith("\n"):
-            lines[last - 1] += "\n"
-        lines.insert(last, "ci          = true             # deploy from GitHub Actions\n")
+        if commented is not None:
+            m = _CI_HINT.match(lines[commented])
+            lines[commented] = f"{m[1]}ci{m[2]}true{m[3]}"
+        else:
+            last = end
+            while last > start + 1 and not lines[last - 1].strip():
+                last -= 1  # keep blank lines (and comments of the next table) after the key
+            while last > start + 1 and lines[last - 1].lstrip().startswith("#"):
+                last -= 1
+            if last > start + 1 and not lines[last - 1].endswith("\n"):
+                lines[last - 1] += "\n"
+            lines.insert(last, "ci          = true             # deploy from GitHub Actions\n")
     path.write_text("".join(lines), encoding="utf-8")
     try:
         if not load_site(cfg.root).target(target).ci:
