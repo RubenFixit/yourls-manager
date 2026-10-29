@@ -299,7 +299,7 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 
 ### Renamed in 0.7
 
-The old spellings still work in 0.7: they print a warning with the new command and are hidden from `ym --help`. They will be removed in 0.8.
+0.7 still accepted the old spellings with a warning; 0.8 removed them. Scripts and CI workflows need the new names:
 
 | Before 0.7 | Now |
 |---|---|

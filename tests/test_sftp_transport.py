@@ -102,7 +102,7 @@ def test_paramiko_is_imported_lazily(tmp_path):
 
     code = (
         "import sys; from yourls_manager.cli import main;"
-        f" main(['--site-dir', {str(tmp_path)!r}, 'status']);"
+        f" main(['--site-dir', {str(tmp_path)!r}, 'doctor', '--local']);"
         " print('paramiko' in sys.modules, 'bcrypt' in sys.modules)"
     )
     (tmp_path / "site.toml").write_text(

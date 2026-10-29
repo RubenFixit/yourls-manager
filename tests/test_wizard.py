@@ -261,21 +261,3 @@ def test_ssh_setup_declined_is_resumable(tmp_path):
                      cwd=tmp_path)  # fmt: skip
     assert res.resumable and any("target login prod" in r for r in res.remaining)
     assert len(ym.calls) == 1
-
-
-def test_legacy_setup_progress_is_resumed_and_migrated(tmp_path, capsys):
-    """Progress saved by `ym setup` (< 0.7) is picked up by `ym init`."""
-    import json
-
-    ym = FakeYm(prod=True, fail="adopt")
-    run_wizard(Script(["adopt", "s", "y"]), invoke=ym, cwd=tmp_path)
-    site, home = tmp_path / "s", tmp_path / "state"
-    # rewrite the new-style files as the old names
-    (site / ".git" / "ym-init.json").rename(site / ".git" / "ym-setup.json")
-    (home / "init.json").rename(home / "setup.json")
-    st = InitState(site, home)
-    assert st.mode == "adopt" and st.is_done("new")
-    st.mark("adopt")
-    assert (site / ".git" / "ym-init.json").is_file()
-    assert not (site / ".git" / "ym-setup.json").exists() and not (home / "setup.json").exists()
-    assert json.loads((home / "init.json").read_text())["site"] == str(site)

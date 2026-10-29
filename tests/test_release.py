@@ -140,10 +140,6 @@ def test_release_flow(site, capsys):
     assert main([*S, "release", "list"]) == 0
     out = capsys.readouterr().out
     assert "v1.0.0-1 " in out and "deployed: prod" in out
-    assert main([*S, "release", "--list"]) == 0  # deprecated spelling
-    captured = capsys.readouterr()
-    assert "deployed: prod" in captured.out and "use `ym release list`" in captured.err
-    assert main([*S, "release", "--list", "promote"]) == 2
 
 
 def test_deploy_policy(site, capsys):

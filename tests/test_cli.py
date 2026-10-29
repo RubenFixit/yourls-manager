@@ -1,4 +1,4 @@
-"""CLI surface: deprecated command spellings (design §14)."""
+"""CLI surface: command spellings (design §14) and release parsing."""
 
 from __future__ import annotations
 
@@ -14,55 +14,44 @@ def _help(capsys) -> str:
 
 
 @pytest.mark.parametrize(
-    ("old", "new"),
+    "argv",
     [
-        (["plugins", "prod"], {"command": "plugin", "plugin_cmd": "apply", "target": "prod"}),
-        (["ssh-setup", "prod"], {"command": "target", "target_cmd": "login", "target": "prod"}),
-        (
-            ["server-config", "prod", "--from-existing"],
-            {"command": "target", "target_cmd": "config", "from_existing": True},
-        ),
-        (
-            ["sync", "--plugin", "a", "--plugin", "b", "--update"],
-            {"command": "plugin", "plugin_cmd": "sync", "names": ["a", "b"], "update": True},
-        ),
-        (["status"], {"command": "doctor", "local": True, "target": None, "with_plugins": True}),
-        (["check", "--json"], {"command": "update", "check": True, "json": True}),
-        (["setup", "site"], {"command": "init"}),
-        (
-            ["template-update", "--defaults"],
-            {"command": "template", "template_cmd": "update", "defaults": True},
-        ),
+        ["plugins", "prod"],
+        ["ssh-setup", "prod"],
+        ["server-config", "prod"],
+        ["sync"],
+        ["status"],
+        ["check"],
+        ["setup"],
+        ["template-update"],
+        ["core", "--version", "1.10.6"],
+        ["release", "--list"],
+        ["release", "--promote"],
     ],
 )
-def test_deprecated_alias_parses_as_new_command(old, new):
-    args = build_parser().parse_args(old)
-    for key, value in new.items():
-        assert getattr(args, key) == value
-    assert args.deprecated[0] == old[0]
-
-
-def test_deprecated_aliases_hidden_from_help(capsys):
-    out = _help(capsys)
-    for old in ("plugins", "ssh-setup", "server-config", "sync", "status", "check", "setup",
-                "template-update"):  # fmt: skip
-        assert f"\n    {old} " not in out
-
-
-def test_deprecated_alias_warns_and_runs(tmp_path, capsys):
-    # no site.toml here: the new command runs and fails the same way (exit 2)
-    assert main(["--site-dir", str(tmp_path), "plugins", "prod"]) == 2
+def test_spellings_removed_in_0_8(argv, capsys):
+    """The 0.7 spellings (design §14.1) are gone: argparse rejects them (exit 2)."""
+    with pytest.raises(SystemExit) as exc:
+        main(argv)
+    assert exc.value.code == 2
     err = capsys.readouterr().err
-    assert "`ym plugins` is deprecated" in err and "use `ym plugin apply`" in err
+    assert "invalid choice" in err or "unrecognized arguments" in err
 
 
-def test_core_version_positional_and_deprecated_flag():
+def test_help_lists_command_groups(capsys):
+    out = _help(capsys)
+    for cmd in ("artifact", "target", "plugin", "release", "template", "init"):
+        assert f"\n    {cmd} " in out
+
+
+def test_new_spellings_parse():
     parse = build_parser().parse_args
     assert parse(["core", "latest"]).core_version == "latest"
-    args = parse(["core", "--version", "1.10.6"])
-    assert (args.core_version, args.core_version_flag) == (None, "1.10.6")
     assert parse(["plugin", "sync", "a", "--dry-run"]).names == ["a"]
     assert parse(["update", "--force"]).force is True
+    assert parse(["update", "--check", "--json"]).json is True
+    assert parse(["doctor", "--local"]).local is True
+    assert parse(["init", "site"]).dir is not None
 
 
 def test_update_check_rejects_update_options(tmp_path, capsys):
@@ -84,8 +73,6 @@ def test_update_check_rejects_update_options(tmp_path, capsys):
         # options before the action are kept (subparser defaults are suppressed)
         (["release", "--push", "--dry-run", "promote"], {"push": True, "dry_run": True}),
         (["release", "list"], {"release_cmd": "list"}),
-        (["release", "--list"], {"release_cmd": None, "list_flag": True}),  # deprecated
-        (["release", "--promote"], {"release_cmd": None, "promote_flag": True}),  # deprecated
     ],
 )
 def test_release_parsing(argv, expect):

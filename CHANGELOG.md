@@ -10,6 +10,10 @@ All notable changes to this project are documented here. The format follows [Kee
 - `[artifact]` in `site.toml`: `enabled`, `formats` (`tar.gz`, `zip`) and `name` (`{slug}`, `{version}`, `{tag}`).
 - `ym doctor`: sites with `[artifact] enabled = true` and no deploy targets are reported as artifact-only (ok, not a warning), and doctor warns when no CI file of the site's `ci_provider` runs `ym artifact build`.
 
+### Removed
+
+- The pre-0.7 spellings that 0.7 still accepted with a warning: `ym setup`, `ym ssh-setup`, `ym server-config`, `ym plugins`, `ym sync`, `ym check`, `ym status`, `ym template-update`, `ym core --version V` and `ym release --promote` / `--list` (see "Renamed in 0.7" in the README for the new names). `ym init` no longer reads the `ym setup` progress files (`.git/ym-setup.json`, `setup.json`).
+
 ### Fixed
 
 - Two hints still described the pre-0.7 manual steps: a missing server-local config on an rsync target now points at `ym target config`, and `ym new` without a deploy host points at `ym target add prod`.

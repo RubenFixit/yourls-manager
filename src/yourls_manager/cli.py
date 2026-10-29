@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -31,35 +31,6 @@ def _global_options(parser: argparse.ArgumentParser, *, suppress: bool) -> None:
     )
 
 
-# Old command spellings kept for one release (design §14): hidden from `ym --help`, they warn
-# and then run the new command. Remove them in 0.8.
-REMOVED_IN = "0.8"
-
-
-def _deprecated(
-    sub,
-    common: argparse.ArgumentParser,
-    old: str,
-    new: str,
-    add_args: Callable[[argparse.ArgumentParser], None] | None = None,
-    **dest: Any,
-) -> argparse.ArgumentParser:
-    """Register ``ym OLD`` as a deprecated spelling of ``ym NEW``.
-
-    ``dest`` sets the namespace keys of the new command (e.g. ``command="plugin",
-    plugin_cmd="apply"``); they override the subparser's own ``command=OLD``. No ``help=`` is
-    given, so argparse leaves the alias out of the command list."""
-    p = sub.add_parser(
-        old,
-        parents=[common],
-        description=f"Deprecated (removed in {REMOVED_IN}): use `ym {new}`.",
-    )
-    if add_args is not None:
-        add_args(p)
-    p.set_defaults(deprecated=(old, new), **dest)
-    return p
-
-
 def _release_tag_flags(p: argparse.ArgumentParser, *, sub: bool) -> None:
     # In a subparser the defaults must not overwrite values given before the action
     # (`ym release --push promote`), so they are SUPPRESSed there.
@@ -75,14 +46,6 @@ def _sync_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("--force", action="store_true", help="ignore uncommitted changes in yourls/")
 
 
-def _warn_deprecated(args: argparse.Namespace) -> None:
-    dep = getattr(args, "deprecated", None)
-    if dep:
-        console.warn(
-            f"`ym {dep[0]}` is deprecated and will be removed in {REMOVED_IN}; use `ym {dep[1]}`"
-        )
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ym",
@@ -95,13 +58,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
 
-    _deprecated(sub, common, "status", "doctor --local", command="doctor", target=None,
-                local=True, with_plugins=True)  # fmt: skip
-    _deprecated(sub, common, "check", "update --check",
-                lambda p: p.add_argument("--json", action="store_true"),
-                command="update", check=True, commit=False, core_only=False,
-                plugins_only=False, force=False)  # fmt: skip
-
     p = sub.add_parser("core", parents=[common], help="vendor YOURLS core at a tag")
     p.add_argument(
         "core_version",
@@ -109,17 +65,8 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="VERSION",
         help="tag to vendor, or 'latest' (default: site.toml [core].version)",
     )
-    # deprecated spelling (clashes with the global `ym --version`)
-    p.add_argument("--version", dest="core_version_flag", metavar="V", help=argparse.SUPPRESS)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--force", action="store_true", help="ignore uncommitted changes in yourls/")
-
-    def old_sync_args(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--plugin", dest="names", action="append", metavar="NAME", default=[])
-        _sync_flags(p)
-
-    _deprecated(sub, common, "sync", "plugin sync", old_sync_args,
-                command="plugin", plugin_cmd="sync")  # fmt: skip
 
     p = sub.add_parser("build", parents=[common], help="assemble dist/ from yourls/ + overlay/")
     p.add_argument("--out", type=Path, metavar="DIR", help="output dir (default: [build].out)")
@@ -264,11 +211,7 @@ def build_parser() -> argparse.ArgumentParser:
             " clean, drift-free tree, with release notes from the lock diff."
         ),
     )
-    g = p.add_mutually_exclusive_group()
-    g.add_argument("--rc", action="store_true", help="tag a release candidate")
-    # deprecated spellings of `ym release promote` / `ym release list`
-    g.add_argument("--promote", dest="promote_flag", action="store_true", help=argparse.SUPPRESS)
-    g.add_argument("--list", dest="list_flag", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--rc", action="store_true", help="tag a release candidate")
     _release_tag_flags(p, sub=False)
     rsub = p.add_subparsers(dest="release_cmd", metavar="ACTION")
     q = rsub.add_parser(
@@ -315,16 +258,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-untagged",
         action="store_true",
         help="local testing only: build an untagged commit as version 0.0.0-dev+<sha>",
-    )
-
-    _deprecated(
-        sub,
-        common,
-        "plugins",
-        "plugin apply",
-        lambda p: p.add_argument("target"),
-        command="plugin",
-        plugin_cmd="apply",
     )
 
     p = sub.add_parser(
@@ -467,8 +400,6 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
         ),
     )
     template_update_args(q)
-    _deprecated(sub, common, "template-update", "template update", template_update_args,
-                command="template", template_cmd="update")  # fmt: skip
 
     p = sub.add_parser(
         "adopt",
@@ -515,7 +446,6 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
         ),
     )
     init_args(p)
-    _deprecated(sub, common, "setup", "init", init_args, command="init")
 
 
 def _login_args(p: argparse.ArgumentParser) -> None:
@@ -620,11 +550,6 @@ def _target_parsers(sub, common: argparse.ArgumentParser) -> None:
     )
     _config_args(q)
 
-    _deprecated(sub, common, "ssh-setup", "target login", _login_args,
-                command="target", target_cmd="login")  # fmt: skip
-    _deprecated(sub, common, "server-config", "target config", _config_args,
-                command="target", target_cmd="config")  # fmt: skip
-
 
 def _load(args: argparse.Namespace) -> SiteConfig:
     start = args.site_dir.resolve() if args.site_dir else None
@@ -691,11 +616,6 @@ def _dispatch(args: argparse.Namespace) -> int:
             raise UsageError("give either TARGET or --local, not both")
         start = args.site_dir.resolve() if args.site_dir else None
         ok = doctor(start, args.target, local=args.local)
-        if getattr(args, "with_plugins", False) and ok:  # deprecated `ym status`
-            from .plugincmd import list_plugins
-
-            console.info("")
-            list_plugins(_load(args))
         return EXIT_OK if ok else EXIT_ERROR
 
     if cmd == "plugin" and args.plugin_cmd == "search":
@@ -714,16 +634,7 @@ def _dispatch(args: argparse.Namespace) -> int:
     if cmd == "core":
         from .core import update_core
 
-        version = args.core_version
-        if args.core_version_flag is not None:
-            if version is not None and version != args.core_version_flag:
-                raise UsageError("give the version once: `ym core VERSION`")
-            console.warn(
-                f"`ym core --version` is deprecated and will be removed in {REMOVED_IN};"
-                f" use `ym core {args.core_version_flag}`"
-            )
-            version = args.core_version_flag
-        update_core(cfg, version, dry_run=args.dry_run, force=args.force)
+        update_core(cfg, args.core_version, dry_run=args.dry_run, force=args.force)
         return EXIT_OK
 
     if cmd == "build":
@@ -844,15 +755,6 @@ def _dispatch(args: argparse.Namespace) -> int:
         from .release import list_releases, release
 
         action = args.release_cmd
-        for flag, name in (("list_flag", "list"), ("promote_flag", "promote")):
-            if getattr(args, flag):
-                if action is not None:
-                    raise UsageError(f"--{name} and `ym release {action}` don't go together")
-                console.warn(
-                    f"`ym release --{name}` is deprecated and will be removed in {REMOVED_IN};"
-                    f" use `ym release {name}`"
-                )
-                action = name
         if action == "list":
             list_releases(cfg)
             return EXIT_OK
@@ -1006,7 +908,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     console.verbose = bool(getattr(args, "verbose", False))
-    _warn_deprecated(args)
     try:
         return _dispatch(args)
     except YMError as exc:

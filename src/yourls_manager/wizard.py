@@ -1,4 +1,4 @@
-"""`ym init` (formerly ``ym init``): interactive onboarding wizard (design §9).
+"""`ym init`: interactive onboarding wizard (design §9).
 
 The wizard only orchestrates the non-interactive commands (``ym new``, ``ym target login``,
 ``ym adopt``, ``ym target config``, ``ym deploy --dry-run``), printing each equivalent
@@ -8,8 +8,7 @@ tests drive it with scripted answers.
 Resuming: progress is saved in ``<site>/.git/ym-init.json`` (never committed) and the
 last unfinished site is remembered in ``$XDG_STATE_HOME/yourls-manager/init.json``
 (default ``~/.local/state``). Running ``ym init`` again (or ``ym init DIR``) offers to
-continue where it stopped; steps that are already done are skipped. Progress files from
-before the rename (``ym-setup.json`` / ``setup.json``) are read and replaced on save.
+continue where it stopped; steps that are already done are skipped.
 """
 
 from __future__ import annotations
@@ -32,9 +31,7 @@ ConfigExists = Callable[[Path, str], bool]
 SshOk = Callable[[Path, str], bool]
 
 STATE_NAME = "ym-init.json"
-LEGACY_STATE_NAME = "ym-setup.json"  # before 0.7 (`ym init`)
 POINTER_NAME = "init.json"
-LEGACY_POINTER_NAME = "setup.json"
 TARGET = "prod"
 
 
@@ -62,7 +59,7 @@ class InitState:
         self.site = site
         self.home = home
         self.data: dict[str, Any] = {"mode": None, "completed": [], "finished": False}
-        source = self.file if self.file and self.file.is_file() else self._legacy_file
+        source = self.file
         if source and source.is_file():
             try:
                 loaded = json.loads(source.read_text(encoding="utf-8"))
@@ -76,13 +73,8 @@ class InitState:
         git_dir = self.site / ".git"
         return git_dir / STATE_NAME if git_dir.is_dir() else None
 
-    @property
-    def _legacy_file(self) -> Path | None:
-        git_dir = self.site / ".git"
-        return git_dir / LEGACY_STATE_NAME if git_dir.is_dir() else None
-
     def exists(self) -> bool:
-        return any(f is not None and f.is_file() for f in (self.file, self._legacy_file))
+        return self.file is not None and self.file.is_file()
 
     @property
     def mode(self) -> str | None:
@@ -105,13 +97,10 @@ class InitState:
         if self.file is not None:
             try:
                 self.file.write_text(json.dumps(self.data, indent=2) + "\n", encoding="utf-8")
-                if self._legacy_file is not None:
-                    self._legacy_file.unlink(missing_ok=True)
             except OSError as exc:  # pragma: no cover - best effort
                 console.warn(f"could not save setup progress: {exc}")
         pointer = self.home / POINTER_NAME
         try:
-            (self.home / LEGACY_POINTER_NAME).unlink(missing_ok=True)
             if self.data.get("finished"):
                 if _read_pointer(self.home) == self.site:
                     pointer.unlink(missing_ok=True)
@@ -127,13 +116,11 @@ class InitState:
 
 
 def _read_pointer(home: Path) -> Path | None:
-    for name in (POINTER_NAME, LEGACY_POINTER_NAME):
-        try:
-            data = json.loads((home / name).read_text(encoding="utf-8"))
-            return Path(data["site"])
-        except (OSError, ValueError, KeyError, TypeError):
-            continue
-    return None
+    try:
+        data = json.loads((home / POINTER_NAME).read_text(encoding="utf-8"))
+        return Path(data["site"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def find_resumable(cwd: Path, home: Path) -> Path | None:
