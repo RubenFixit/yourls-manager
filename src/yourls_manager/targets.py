@@ -18,6 +18,9 @@ from .util import UsageError, console
 Ask = Callable[[str, str | None], str]
 
 TYPES = ("rsync", "sftp")
+# Same default as the site template: ACME challenges and other server-managed files under
+# .well-known/ survive rsync --delete and SFTP deletes.
+DEFAULT_PROTECT = [".well-known/"]
 _BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -31,6 +34,7 @@ class TargetOptions:
     php: str | None = None
     url: str | None = None
     accept: str | None = None
+    protect: list[str] | None = None  # None: DEFAULT_PROTECT
 
 
 def describe(spec: TargetSpec) -> str:
@@ -89,6 +93,8 @@ def _fill(cfg: SiteConfig, name: str, o: TargetOptions, ask: Ask | None) -> Targ
         o.url = q("Public URL of the site on this target", cfg.site.url)
     if o.accept is None:
         o.accept = "release" if name == "prod" else "any"
+    if o.protect is None:
+        o.protect = list(DEFAULT_PROTECT)
     return o
 
 
@@ -105,6 +111,8 @@ def render_block(cfg: SiteConfig, name: str, o: TargetOptions) -> str:
         lines.append(f"php    = {_toml_str(o.php)}")
     if o.url and o.url != cfg.site.url:
         lines.append(f"url    = {_toml_str(o.url)}")
+    if o.protect:
+        lines.append(f"protect = [{', '.join(_toml_str(p) for p in o.protect)}]")
     lines.append(f"accept = {_toml_str(o.accept or 'any')}")
     return "\n".join(lines) + "\n"
 

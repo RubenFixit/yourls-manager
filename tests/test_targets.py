@@ -48,6 +48,7 @@ def test_add_rsync_non_interactive(site, capsys):
         "path": "go.example.com",
         "php": php,
         "accept": "release",  # prod default
+        "protect": [".well-known/"],  # template default
     }
     out = capsys.readouterr().out
     assert "ym target login prod" in out and "ym target config prod" in out
@@ -62,6 +63,7 @@ def test_add_sftp_and_list(site, capsys):
     err = capsys.readouterr().err
     assert "--php does not apply to sftp" in err
     spec = load_site(site).target("staging")
+    assert spec.protect == (".well-known/",)
     assert (spec.type, spec.port, spec.accept, spec.url) == (
         "sftp", 2222, "any", "https://staging.example.com"
     )  # fmt: skip
@@ -107,6 +109,7 @@ def test_add_interactive(site):
         type   = "sftp"
         host   = "h.example.com"
         path   = "web"
+        protect = [".well-known/"]
         accept = "release"
         """
     )
@@ -116,3 +119,10 @@ def test_dotted_target_name_is_quoted(site):
     spec = add_target(load_site(site), "eu.prod", TargetOptions(path="web"))
     assert spec.name == "eu.prod"
     assert '[deploy.targets."eu.prod"]' in (site / "site.toml").read_text()
+
+
+def test_protect_option(site):
+    argv = ["--site-dir", str(site), "target", "add", "t", "--path", "w",
+            "--protect", ".well-known/", "--protect", "stats/"]  # fmt: skip
+    assert main(argv) == 0
+    assert load_site(site).target("t").protect == (".well-known/", "stats/")

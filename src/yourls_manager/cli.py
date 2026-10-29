@@ -535,6 +535,12 @@ def _target_parsers(sub, common: argparse.ArgumentParser) -> None:
         choices=("any", "release"),
         help='deploy policy (default: "release" for prod, else "any")',
     )
+    q.add_argument(
+        "--protect",
+        action="append",
+        metavar="PATH",
+        help="remote path deploys never delete (repeatable; default: .well-known/)",
+    )
     q = tsub.add_parser("list", parents=[common], help="show the deploy targets in site.toml")
     q.add_argument("--json", action="store_true", help="machine-readable output")
     q = tsub.add_parser(
@@ -854,6 +860,7 @@ def _target(cfg: SiteConfig, args: argparse.Namespace) -> int:
             php=args.php,
             url=args.url,
             accept=args.accept,
+            protect=args.protect,
         )
         add_target(cfg, args.name, opts, ask=_ask if _is_tty() else None)
         return EXIT_OK

@@ -572,7 +572,8 @@ are removed in 0.8.
   asks for missing values (sftp skips the PHP question); otherwise `--path` is required, and
   `--host` for sftp. Writes `type`, `path`, `accept` always and other keys only when not the
   default. `prod` defaults to `accept = "release"` (as the template does), others to `"any"`.
-  `--php` on sftp warns and is dropped.
+  `--php` on sftp warns and is dropped. `protect` defaults to `[".well-known/"]` like the
+  template (`--protect`, repeatable, replaces it).
 - `target list [--json]`: name, type, location (`user@host:path`, `sftp://…`, `local:…`),
   url, accept, ci.
 - `target login` for sftp targets: when key login fails but `YM_<TARGET>_PASSWORD` logs in,

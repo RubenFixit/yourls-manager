@@ -12,8 +12,9 @@ All notable changes to this project are documented here. The format follows
   `ym server-config` (same options). For sftp targets, `target login` accepts a working
   password login (`YM_<TARGET>_PASSWORD`) and only offers a key instead of requiring one.
 - `ym target add NAME [--type] [--host] [--user] [--port] [--path] [--php] [--url]
-  [--accept]`: add a deploy target to `site.toml` without hand-editing (asks for missing
-  values on a terminal; `prod` defaults to `accept = "release"`).
+  [--accept] [--protect]`: add a deploy target to `site.toml` without hand-editing (asks for
+  missing values on a terminal; `prod` defaults to `accept = "release"`; `protect` defaults
+  to `.well-known/` as in the template).
 - `ym target list [--json]`: the targets with type, location, URL, policy and CI flag.
 - The setup wizard offers `ym target add prod` when the site has no `prod` target.
 - `ym plugin sync [NAME ...]`, the new name of `ym sync` (plugin names are positional).
