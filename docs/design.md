@@ -99,6 +99,11 @@ ci          = true                                 # deployed by the site's GitH
 
 [release]
 push_markers = false                               # also push deployed/<target> branches (§11.5)
+
+[artifact]                                         # release archives (§15.1)
+enabled = true                                     # default false
+formats = ["tar.gz"]                               # "tar.gz" and/or "zip"
+name    = "{slug}-{version}"                       # placeholders {slug}, {version}, {tag}
 ```
 
 Validation errors are friendly and point at the key; unknown keys warn. Target names match `[A-Za-z0-9][A-Za-z0-9._-]*`; remote paths are limited to `[A-Za-z0-9._/@+~-]` so quoting stays trivial. `php`, `backup_dir`, `backup_keep` on an sftp target warn and are ignored. `ym target add` writes new target tables (§14.3); `ym plugin add/remove/enable/disable` edit `[[plugins]]` (§11.1). All of these edit the file as text (comments kept), re-parse, and restore the original if the result doesn't validate.
@@ -453,9 +458,9 @@ The template pins `manager_version`, so it moved to the new names only after v0.
 
 ---
 
-## 15. Release artifacts and CI providers (planned, v0.8)
+## 15. Release artifacts and CI providers (v0.8)
 
-Not built yet. This section is the design agreed before implementing.
+The yourls-manager part (§15.1–15.3) is built and unreleased (it ships in 0.8.0); the template part (§15.4–15.5) is not built yet.
 
 ### 15.0 Why
 
@@ -476,15 +481,15 @@ formats = ["tar.gz"]           # any of "tar.gz", "zip"; default ["tar.gz"]
 name    = "{slug}-{version}"   # placeholders: {slug}, {version} (tag without "v"), {tag}
 ```
 
-Validation follows §2: unknown keys warn, bad values name the key. `name` must render to `[A-Za-z0-9._-]+`. Example output: `rfixme-1.10.6-2.tar.gz`.
+Validation follows §2: unknown keys warn, bad values name the key. `name` must render to `[A-Za-z0-9._-]+` and not start with `.` or `-`; formats must be known and not repeated. Example output: `rfixme-1.10.6-2.tar.gz`.
 
 ### 15.2 `ym artifact build [--ref REF] [--out DIR] [--format F ...] [--allow-untagged]`
 
 New module `artifact.py`; works whether or not `enabled = true` (the flag controls CI and doctor, not the command).
 
-1. Resolve the release: REF (default HEAD) must carry a release tag (§11.4, final or rc) and the tree must be clean. With several tags on the commit, the newest wins. `--allow-untagged` (local testing only) uses `0.0.0-dev+<short sha>` as the version and marks the metadata `untagged: true`.
-2. `build_site()` into a temp directory (all drift checks apply; no `--allow-drift`).
-3. Write each archive reproducibly: entries sorted by path, mtime = the tagged commit's committer time, uid/gid 0 with empty owner names, mode 0644 (0755 for directories), no extended attributes; gzip header mtime 0 and no file name; zip entries stored with the same fixed time. Archive root = the web root (no top-level directory). Rebuilding a tag gives byte-identical archives, so a published artifact can be checked against the repo.
+1. Resolve the release: REF (default HEAD) must carry a release tag (§11.4, final or rc) and the tree must be clean (untracked files count, as for `ym release`). When REF is itself a release tag, that tag is packaged (so an rc pipeline re-run after a promote still builds the rc); otherwise, with several tags on the commit, the newest wins. `--allow-untagged` (local testing only) uses `0.0.0-dev+<short sha>` as the version and marks the metadata `untagged: true`; file names replace the `+` with `-`.
+2. `build_site()` into a temp directory (all drift checks apply; no `--allow-drift`). When REF is not HEAD, the site at REF (its own site.toml, lock, `yourls/`, `overlay/`) is checked out into a temporary `git worktree`, which is removed afterwards.
+3. Write each archive reproducibly: entries sorted by path, mtime = the tagged commit's committer time, uid/gid 0 with empty owner names, mode 0644 (0755 for directories), no extended attributes; gzip header mtime 0 and no file name; zip entries stored with the same fixed time (zip keeps even seconds) and `create_system` = Unix on every platform. Tar is PAX format, compression level 9; identical bytes assume the same ym version and zlib. Archive root = the web root (no top-level directory). Rebuilding a tag gives byte-identical archives, so a published artifact can be checked against the repo.
 4. Sidecar files next to each archive (never inside it, since the archive becomes a public web root):
    - `<archive>.sha256`: `sha256sum` format (`<hex>  <file name>`).
    - `<name>.json` (one per release, shared by all formats):
@@ -501,14 +506,14 @@ New module `artifact.py`; works whether or not `enabled = true` (the flag contro
      ```
 
      Fields match the lock and `release.json` (§5) where they overlap.
-5. Output directory: `--out` or `[build].out` + `-artifacts` (e.g. `dist-artifacts/`, gitignored by the template). Existing files of the same name are replaced; others are left alone.
+5. Output directory: `--out` or `[build].out` + `-artifacts` (e.g. `dist-artifacts/`, gitignored by the template). Existing files of the same name are replaced (written to a temp file, then renamed); others are left alone. `--format` (repeatable) overrides `formats`.
 
 Exit codes: 0 ok; usage error when REF has no release tag or the tree is dirty.
 
 ### 15.3 Changes elsewhere in ym
 
 - Sites without deploy targets are a supported shape: `ym doctor` reports "targets: none (artifact-only site)" as OK instead of a warning when `[artifact] enabled = true`; `ym release` and `ym release list` already work without targets.
-- `ym doctor`: WARN when `[artifact] enabled = true` but the repo has no CI file for the configured provider (§15.4), since nothing would publish.
+- `ym doctor` (also `--local`): with `[artifact] enabled = true`, an `artifact` line in the site section. The provider is `ci_provider` from `.copier-answers.yml` (missing: `github`). WARN when it is `none`, when the provider's CI file is missing (`.github/workflows/*.yml`/`.yaml`, `.gitlab-ci.yml`), or when none of those files runs `ym artifact build`, since nothing would publish; else OK naming the formats and the publishing file.
 - `ym release` is unchanged (it already builds before tagging). The CI job builds the artifact from the pushed tag.
 - The overlay config shim needs no change: consumers point `YOURLS_CONFIG_FILE` at their server-local config (§7), or place it at the default `<parent>/yourls-config/<slug>.php`.
 
@@ -541,5 +546,5 @@ Prerequisite for GitLab publishing; also useful on its own.
 
 ### 15.6 Implementation order
 
-1. yourls-manager: `[artifact]` parsing, `artifact.py` + `ym artifact build`, doctor changes, tests (reproducibility: two builds of one tag are byte-identical; tag/dirty refusals; sidecar contents). Release 0.8.0 together with the §14.6 removals.
+1. yourls-manager: `[artifact]` parsing, `artifact.py` + `ym artifact build`, doctor changes, tests (reproducibility: two builds of one tag are byte-identical; tag/dirty refusals; sidecar contents). Done (`tests/test_artifact.py`, `tests/test_config.py`). Release 0.8.0 together with the §14.6 removals: open.
 2. Template: `ci_provider` with conditional file names, `.gitlab-ci.yml`, `release_artifact` and the publish jobs; README; pin `v0.8.0`.

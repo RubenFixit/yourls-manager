@@ -174,3 +174,54 @@ def test_set_core_version_preserves_formatting(tmp_path):
     f.write_text("[site]\nversion = \"x\"\n[core]\nversion = '1.0.0'\n")
     set_core_version(f, "1.1.0")
     assert f.read_text() == "[site]\nversion = \"x\"\n[core]\nversion = '1.1.0'\n"
+
+
+# --------------------------------------------------------------------------- [artifact] (§15.1)
+
+
+def test_artifact_defaults_when_table_missing():
+    art = parse(BASE).artifact
+    assert (art.enabled, art.formats, art.name) == (False, ("tar.gz",), "{slug}-{version}")
+    assert art.render_name(slug="s", version="1.10.6-2", tag="v1.10.6-2") == "s-1.10.6-2"
+
+
+def test_artifact_table():
+    cfg = parse(
+        BASE + '[artifact]\nenabled = true\nformats = ["zip", "tar.gz"]\nname = "{slug}_{tag}"\n'
+    )
+    assert cfg.artifact.enabled and cfg.artifact.formats == ("zip", "tar.gz")
+    name = cfg.artifact.render_name(slug="go", version="1.10.6-2-rc.1", tag="v1.10.6-2-rc.1")
+    assert name == "go_v1.10.6-2-rc.1"
+    # an untagged build's version has a "+": file names stay within [A-Za-z0-9._-]
+    assert cfg.artifact.render_name(slug="go", version="0.0.0-dev+abc", tag="x") == "go_x"
+    assert (
+        parse(BASE + "[artifact]\n").artifact.render_name(
+            slug="go", version="0.0.0-dev+abc1234", tag=""
+        )
+        == "go-0.0.0-dev-abc1234"
+    )
+
+
+@pytest.mark.parametrize(
+    ("table", "key"),
+    [
+        ('formats = ["tar.bz2"]', r"artifact\.formats\[0\]: unknown format"),
+        ("formats = []", r"artifact\.formats: must name at least one"),
+        ('formats = ["zip", "zip"]', r"artifact\.formats: lists a format twice"),
+        ('formats = "zip"', r"artifact\.formats: must be a list"),
+        ('name = "{slug}-{date}"', r"artifact\.name: unknown placeholder \{date\}"),
+        ('name = "{}"', r"artifact\.name: unknown placeholder"),
+        ('name = "{slug"', r"artifact\.name: invalid name template"),
+        ('name = "{slug}/{version}"', r"artifact\.name: must render to"),
+        ('name = "-{slug}"', r"artifact\.name: must render to"),
+        ('enabled = "yes"', r"artifact\.enabled: must be true or false"),
+    ],
+)
+def test_artifact_validation(table, key):
+    with pytest.raises(ConfigError, match=key):
+        parse(BASE + "[artifact]\n" + table + "\n")
+
+
+def test_artifact_unknown_key_warns():
+    cfg = parse(BASE + "[artifact]\nenabled = true\nupload = true\n")
+    assert any("artifact.upload" in w for w in cfg.warnings)

@@ -279,6 +279,44 @@ def build_parser() -> argparse.ArgumentParser:
         "list", parents=[common], help="releases, their dates, and where each is deployed"
     )
 
+    p = sub.add_parser(
+        "artifact",
+        parents=[common],
+        help="release archives for sites ym doesn't deploy: build",
+    )
+    asub = p.add_subparsers(dest="artifact_cmd", metavar="ACTION", required=True)
+    q = asub.add_parser(
+        "build",
+        parents=[common],
+        help="build a release tag into reproducible .tar.gz/.zip files with sha256 + metadata",
+        description=(
+            "Build the web root of a release tag (REF must carry v<yourls>-<rev>[-rc.<n>]; the"
+            " tree must be clean) and write it as archives without a top-level directory, a"
+            " <archive>.sha256 per archive and one <name>.json with the release metadata."
+            " Rebuilding a tag gives byte-identical archives. Nothing is uploaded."
+        ),
+    )
+    q.add_argument("--ref", default="HEAD", help="release tag or commit to build (default: HEAD)")
+    q.add_argument(
+        "--out",
+        type=Path,
+        metavar="DIR",
+        help="output directory (default: [build].out + '-artifacts', e.g. dist-artifacts/)",
+    )
+    q.add_argument(
+        "--format",
+        dest="formats",
+        action="append",
+        choices=("tar.gz", "zip"),
+        metavar="F",
+        help="tar.gz or zip (repeatable; default: [artifact].formats)",
+    )
+    q.add_argument(
+        "--allow-untagged",
+        action="store_true",
+        help="local testing only: build an untagged commit as version 0.0.0-dev+<sha>",
+    )
+
     _deprecated(
         sub,
         common,
@@ -832,6 +870,18 @@ def _dispatch(args: argparse.Namespace) -> int:
 
     if cmd == "target":
         return _target(cfg, args)
+
+    if cmd == "artifact":
+        from .artifact import artifact_build
+
+        artifact_build(
+            cfg,
+            ref=args.ref,
+            out=args.out.resolve() if args.out else None,
+            formats=args.formats,
+            allow_untagged=args.allow_untagged,
+        )
+        return EXIT_OK
 
     if cmd == "adopt":
         from .adopt import adopt

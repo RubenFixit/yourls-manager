@@ -189,6 +189,33 @@ The template sets `accept = "release"` on prod. Overrides are recorded in the se
 
 **CI.** The template's deploy workflow deploys final tags to `prod` and `-rc.<n>` tags to `staging` (skipped when site.toml has no staging target). The policy is enforced by `ym deploy` itself, so manual workflow runs can't bypass it.
 
+## Release artifacts
+
+Some sites aren't deployed by ym: YOURLS is one part of a larger service with its own packaging, and that service pins a built copy of the site instead. For those, keep the site in its own repo as usual and publish each release as an archive:
+
+```toml
+[artifact]
+enabled = true                 # tells doctor (and the template's CI) that releases are published
+formats = ["tar.gz", "zip"]    # default ["tar.gz"]
+name    = "{slug}-{version}"   # {slug}, {version} (the tag without "v"), {tag}
+```
+
+```sh
+ym release                         # tag v1.10.6-2 as usual
+ym artifact build                  # HEAD must carry a release tag; the tree must be clean
+ym artifact build --ref v1.10.6-1  # rebuild an older release (same bytes as before)
+```
+
+This writes to `dist-artifacts/` (or `--out DIR`):
+
+| File | Contents |
+|---|---|
+| `rfixme-1.10.6-2.tar.gz`, `.zip` | The built web root (`yourls/` + `overlay/`), without a top-level directory. Entries are sorted and carry fixed times (the commit's), owners (0) and modes (0644 files, 0755 directories), so rebuilding a tag gives byte-identical archives. |
+| `rfixme-1.10.6-2.tar.gz.sha256` | `sha256sum` format: `<hex>  <file name>`. |
+| `rfixme-1.10.6-2.json` | Site, version, tag, rc, commit and commit time, locked core and plugin commits, the ym version, and each archive's sha256. |
+
+ym doesn't upload anything; the site's CI publishes the files. `ym doctor` treats a site with `enabled = true` and no deploy targets as artifact-only and warns when no CI file runs `ym artifact build`. `--allow-untagged` builds an untagged commit as version `0.0.0-dev+<sha>` for local tests.
+
 ## Setup wizard
 
 `ym init` is an interactive front end to the commands above. It needs a terminal (without one it exits with code 2). It:
@@ -253,12 +280,13 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 | `ym release [--rc] [--push] [--dry-run] [-m TEXT]` | Tag the next release `v<yourls>-<rev>` (`--rc`: `-rc.<n>`) on a clean, drift-free tree, with release notes from the lock diff. |
 | `ym release promote [--push] [--dry-run] [-m TEXT]` | Tag the newest rc's commit as its final release (`vX-N-rc.k` → `vX-N`). |
 | `ym release list` | Releases with dates and which targets have them deployed. |
+| `ym artifact build [--ref REF] [--out DIR] [--format tar.gz\|zip ...] [--allow-untagged]` | Build a release tag into reproducible archives plus `.sha256` and `.json` metadata files, for sites that something other than ym deploys. See [Release artifacts](#release-artifacts). |
 
 ### Health
 
 | Command | What it does |
 |---|---|
-| `ym doctor [TARGET] [--local]` | Read-only health report, one line per check (ok / warn / FAIL) with a fix hint: git, uv, rsync and ssh (when a target needs them); `site.toml` valid; lock present without drift; uncommitted changes; HEAD pushed. Per target (all, or the one given): login, PHP CLI version (rsync), server config present, `url` is https, install/upgrade pending, and the deployed commit vs HEAD (from release.json). Exits 1 if any check fails. |
+| `ym doctor [TARGET] [--local]` | Read-only health report, one line per check (ok / warn / FAIL) with a fix hint: git, uv, rsync and ssh (when a target needs them); `site.toml` valid; lock present without drift; uncommitted changes; HEAD pushed; with `[artifact] enabled = true`, a CI job that publishes the artifacts. Per target (all, or the one given): login, PHP CLI version (rsync), server config present, `url` is https, install/upgrade pending, and the deployed commit vs HEAD (from release.json). Exits 1 if any check fails. |
 | `ym doctor --local` | The offline part of `ym doctor`: tools, `site.toml`, the locked core version and commit, drift (tree-hash mismatches, plugins in `site.toml` but not in the lock or the reverse), and uncommitted changes. Exits 1 on drift. Plugin details: `ym plugin list`. |
 
 ### GitHub

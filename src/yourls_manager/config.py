@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import posixpath
 import re
+import string
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,6 +31,10 @@ HOST_RE = re.compile(r"^[A-Za-z0-9.-]+$|^\[[0-9A-Fa-f:.]+\]$")
 USER_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 # Keys of rsync targets that mean nothing for sftp targets (warned about, then ignored).
 SFTP_IGNORED_KEYS = ("php", "backup_dir", "backup_keep")
+# Release artifacts (design §15.1).
+ARTIFACT_FORMATS = ("tar.gz", "zip")
+ARTIFACT_PLACEHOLDERS = ("slug", "version", "tag")
+ARTIFACT_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]*$")
 
 
 class ConfigError(UsageError):
@@ -74,6 +79,19 @@ class BuildSpec:
 
 
 @dataclass(frozen=True)
+class ArtifactSpec:
+    enabled: bool = False  # controls CI and doctor, not `ym artifact build`
+    formats: tuple[str, ...] = ("tar.gz",)
+    name: str = "{slug}-{version}"
+
+    def render_name(self, *, slug: str, version: str, tag: str) -> str:
+        """The archive base name. Characters outside [A-Za-z0-9._-] (the ``+`` of an
+        untagged build's version) become ``-``."""
+        name = self.name.format(slug=slug, version=version, tag=tag)
+        return re.sub(r"[^A-Za-z0-9._-]", "-", name)
+
+
+@dataclass(frozen=True)
 class TargetSpec:
     name: str
     type: str
@@ -111,6 +129,7 @@ class SiteConfig:
     targets: dict[str, TargetSpec]
     warnings: list[str] = field(default_factory=list)
     push_markers: bool = False  # [release] push_markers (design §11.5)
+    artifact: ArtifactSpec = field(default_factory=ArtifactSpec)  # [artifact] (design §15.1)
 
     @property
     def site_file(self) -> Path:
@@ -378,6 +397,8 @@ def parse_site(data: dict[str, Any], root: Path) -> SiteConfig:
     push_markers = release_r.bool("push_markers", False)
     release_r.finish()
 
+    artifact = _parse_artifact(top._get("artifact", False) or {}, warnings)
+
     top.finish()
     return SiteConfig(
         root=root,
@@ -388,7 +409,44 @@ def parse_site(data: dict[str, Any], root: Path) -> SiteConfig:
         targets=targets,
         warnings=warnings,
         push_markers=push_markers,
+        artifact=artifact,
     )
+
+
+def _parse_artifact(raw: Any, warnings: list[str]) -> ArtifactSpec:
+    r = _Reader(raw, "artifact", warnings)
+    enabled = r.bool("enabled", False)
+    formats = r.str_list("formats") if "formats" in r.table else ArtifactSpec.formats
+    if not formats:
+        raise ConfigError("artifact.formats", "must name at least one format")
+    for i, fmt in enumerate(formats):
+        if fmt not in ARTIFACT_FORMATS:
+            raise ConfigError(
+                f"artifact.formats[{i}]",
+                f"unknown format {fmt!r}; known: {', '.join(ARTIFACT_FORMATS)}",
+            )
+    if len(set(formats)) != len(formats):
+        raise ConfigError("artifact.formats", "lists a format twice")
+    name = r.str("name", ArtifactSpec.name)
+    try:
+        fields = [f for _, f, _, _ in string.Formatter().parse(name) if f is not None]
+        bad = [f for f in fields if f not in ARTIFACT_PLACEHOLDERS]
+        if bad:
+            raise ConfigError(
+                "artifact.name",
+                f"unknown placeholder {{{bad[0]}}}; known: "
+                + ", ".join(f"{{{p}}}" for p in ARTIFACT_PLACEHOLDERS),
+            )
+        rendered = name.format(slug="slug", version="1.0.0-1", tag="v1.0.0-1")
+    except (ValueError, IndexError, KeyError, AttributeError):
+        raise ConfigError("artifact.name", f"invalid name template {name!r}") from None
+    if not ARTIFACT_NAME_RE.match(rendered):
+        raise ConfigError(
+            "artifact.name",
+            f"must render to [A-Za-z0-9._-]+ (not starting with '.' or '-'), got {name!r}",
+        )
+    r.finish()
+    return ArtifactSpec(enabled=enabled, formats=tuple(formats), name=name)
 
 
 def _parse_target(name: str, raw: Any, site: SiteInfo, warnings: list[str]) -> TargetSpec:

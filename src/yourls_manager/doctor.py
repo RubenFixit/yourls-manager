@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -160,6 +161,44 @@ def check_site(rep: Report, start: Path | None) -> SiteConfig | None:
         else:
             rep.add(WARN, "HEAD pushed", f"{head} is not on any remote branch", "git push")
     return cfg
+
+
+CI_FILES = {"github": ".github/workflows/*.y*ml", "gitlab": ".gitlab-ci.yml"}
+_CI_PROVIDER_RE = re.compile(r"""^ci_provider:\s*['"]?([A-Za-z]+)""", re.MULTILINE)
+
+
+def ci_provider(root: Path) -> str:
+    """The template's ``ci_provider`` answer (design §15.4); sites from before it: github."""
+    answers = root / ".copier-answers.yml"
+    text = answers.read_text(encoding="utf-8") if answers.is_file() else ""
+    m = _CI_PROVIDER_RE.search(text)
+    return m.group(1) if m else "github"
+
+
+def check_artifact(rep: Report, cfg: SiteConfig) -> None:
+    """[artifact] enabled = true: something must publish the archives (design §15.3)."""
+    if not cfg.artifact.enabled:
+        return
+    provider = ci_provider(cfg.root)
+    pattern = CI_FILES.get(provider)
+    if pattern is None:
+        rep.add(WARN, "artifact", f"enabled, but ci_provider = {provider!r}: nothing publishes it",
+                "publish the output of `ym artifact build` yourself, or switch the template's"
+                " ci_provider")  # fmt: skip
+        return
+    files = sorted(cfg.root.glob(pattern))
+    if not files:
+        rep.add(WARN, "artifact", f"enabled, but there is no {pattern} ({provider}):"
+                " nothing publishes it", "ym template update")  # fmt: skip
+        return
+    publishers = [f for f in files if "ym artifact build" in f.read_text(errors="replace")]
+    if not publishers:
+        names = ", ".join(f.relative_to(cfg.root).as_posix() for f in files)
+        rep.add(WARN, "artifact", f"enabled, but no CI job runs `ym artifact build` ({names})",
+                "ym template update, answering release_artifact = true")  # fmt: skip
+        return
+    names = ", ".join(f.relative_to(cfg.root).as_posix() for f in publishers)
+    rep.add(OK, "artifact", f"{', '.join(cfg.artifact.formats)}, published by {names}")
 
 
 # --------------------------------------------------------------------------- targets
@@ -335,6 +374,8 @@ def doctor(start: Path | None, target: str | None = None, *, local: bool = False
     ``local``: only the tools and the site repo (no network; formerly ``ym status``)."""
     rep = Report()
     cfg = check_site(rep, start)
+    if cfg is not None:
+        check_artifact(rep, cfg)
     check_tools(rep, cfg)
     if cfg is not None and not local:
         if target is not None:
@@ -343,7 +384,10 @@ def doctor(start: Path | None, target: str | None = None, *, local: bool = False
             specs = list(cfg.targets.values())
             if not specs:
                 rep.section("targets")
-                rep.add(WARN, "targets", "none defined in site.toml")
+                if cfg.artifact.enabled:
+                    rep.add(OK, "targets", "none (artifact-only site)")
+                else:
+                    rep.add(WARN, "targets", "none defined in site.toml")
         github: dict = {}
         for spec in specs:
             check_target(rep, cfg, spec, github)
