@@ -8,14 +8,30 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- `ym gh-setup [TARGET ...] [--repo] [--rotate] [--dry-run]`: set up the GitHub environments
-  and secrets the site's deploy workflow needs, with the GitHub CLI (offers `gh auth login`
-  when it isn't logged in): creates `production` / `staging`, generates a dedicated CI key,
-  installs it on the server over the working login and checks it, stores it as
-  `DEPLOY_SSH_KEY`, and stores the host keys from `~/.ssh/known_hosts` (else `ssh-keyscan`
-  with a fingerprint confirmation) as `DEPLOY_KNOWN_HOSTS`. If the site has no GitHub
-  repository yet it offers to create one (private unless `--public`; `--create-repo` without
-  asking) and pushes the current branch, without tags.
+- `ym repo create [--name] [--owner] [--public] [--dry-run]`: create the site's GitHub
+  repository with the GitHub CLI (private by default), add it as `origin` (or create the one
+  `origin` already names) and push the current branch, without tags.
+- `ym ci setup [TARGET ...] [--repo] [--rotate] [--dry-run]`: enable deploys from GitHub
+  Actions: create the `production` / `staging` environment, generate a dedicated CI key,
+  install it on the server over the working login and check it, store it as
+  `DEPLOY_SSH_KEY`, store the host keys from `~/.ssh/known_hosts` (else `ssh-keyscan` with a
+  fingerprint confirmation) as `DEPLOY_KNOWN_HOSTS`, and set `ci = true` on the target.
+  Offers `gh auth login`, and to create the repository when there is none.
+- `ym ci status [TARGET ...]`: check the environments and secrets of `ci = true` targets.
+- Target key `ci = true`: the site template's deploy workflow only deploys these targets.
+  `ym doctor` checks their GitHub environment and secrets (when `gh` is logged in).
+
+### Changed
+
+- `ym release --push` stops before tagging when there is no `origin` remote, and warns when
+  the released commit isn't on a remote branch.
+- A site without any git remote is a normal setup: `ym doctor` reports it as ok ("local
+  only"), and `ym deploy` no longer warns that HEAD isn't pushed (it still does when a
+  remote exists). `[release] push_markers` without `origin` warns instead of failing.
+
+### Fixed
+
+- `ym doctor` crashed instead of reporting when a target's server couldn't be queried.
 
 ## [0.5.0] - 2026-10-28
 

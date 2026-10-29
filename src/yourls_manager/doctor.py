@@ -146,7 +146,7 @@ def check_site(rep: Report, start: Path | None) -> SiteConfig | None:
         return cfg
     _, remotes = _git(cfg.root, "remote")
     if not remotes:
-        rep.add(WARN, "HEAD pushed", "no git remote", "add one: git remote add origin <url>")
+        rep.add(OK, "remote", "none (local only)")
     else:
         _, branches = _git(cfg.root, "branch", "-r", "--contains", "HEAD")
         if branches:
@@ -282,14 +282,45 @@ def _deployed_check(rep: Report, cfg: SiteConfig, spec: TargetSpec, rel: dict | 
         rep.add(WARN, "deployed", what + extra, f"ym deploy {spec.name}")
 
 
-def check_target(rep: Report, cfg: SiteConfig, spec: TargetSpec) -> None:
+def _ci_checks(rep: Report, cfg: SiteConfig, spec: TargetSpec, github: dict) -> None:
+    """Only for targets with ci = true: the GitHub side of the deploy workflow."""
+    from .ci import ci_check, environment_for
+    from .github import Gh, current_repo, gh_logged_in
+
+    if "repo" not in github:
+        gh = Gh(cwd=cfg.root)
+        github["gh"] = gh
+        github["repo"] = current_repo(gh) if gh_logged_in(gh) else False
+    repo = github["repo"]
+    if repo is False:
+        rep.add(WARN, "ci", "can't check GitHub (gh not installed or not logged in)",
+                "gh auth login")  # fmt: skip
+        return
+    if repo is None:
+        rep.add(FAIL, "ci", "ci = true but this site has no GitHub repository", "ym repo create")
+        return
+    res = ci_check(cfg, spec, github["gh"], repo)
+    env = environment_for(spec.name)
+    if res.ok:
+        rep.add(OK, "ci", f"{repo}: environment {env!r} has both secrets")
+    else:
+        rep.add(FAIL, "ci", f"{repo}: " + "; ".join(res.problems), f"ym ci setup {spec.name}")
+
+
+def check_target(rep: Report, cfg: SiteConfig, spec: TargetSpec, github: dict | None = None
+                 ) -> None:  # fmt: skip
     where = spec.host or "local"
-    rep.section(f"target {spec.name} ({spec.type}, {where})")
+    rep.section(f"target {spec.name} ({spec.type}, {where}{', ci' if spec.ci else ''})")
     rel = None
     if _login(rep, spec):
-        rel = _sftp_checks(rep, cfg, spec) if spec.is_sftp else _rsync_checks(rep, cfg, spec)
+        try:
+            rel = _sftp_checks(rep, cfg, spec) if spec.is_sftp else _rsync_checks(rep, cfg, spec)
+        except YMError as exc:
+            rep.add(FAIL, "server", str(exc).splitlines()[0])
     _url_checks(rep, spec, deployed=rel is not None)
     _deployed_check(rep, cfg, spec, rel)
+    if spec.ci:
+        _ci_checks(rep, cfg, spec, github if github is not None else {})
 
 
 def doctor(start: Path | None, target: str | None = None) -> bool:
@@ -305,8 +336,9 @@ def doctor(start: Path | None, target: str | None = None) -> bool:
             if not specs:
                 rep.section("targets")
                 rep.add(WARN, "targets", "none defined in site.toml")
+        github: dict = {}
         for spec in specs:
-            check_target(rep, cfg, spec)
+            check_target(rep, cfg, spec, github)
     console.info(
         f"doctor: {rep.count(OK)} ok, {rep.count(WARN)} warning(s), {rep.count(FAIL)} failed"
     )

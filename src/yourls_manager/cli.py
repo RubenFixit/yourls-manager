@@ -197,39 +197,63 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("target", nargs="?", help="check only this target (default: all)")
 
     p = sub.add_parser(
-        "gh-setup",
+        "repo",
+        parents=[common],
+        help="store the site on GitHub (create the repo, push)",
+    )
+    rsub = p.add_subparsers(dest="repo_cmd", metavar="ACTION", required=True)
+    q = rsub.add_parser(
+        "create",
+        parents=[common],
+        help="create the site's GitHub repo as origin and push the current branch (needs gh)",
+        description=(
+            "Create a GitHub repository for this site with the GitHub CLI (private unless"
+            " --public), add it as origin (or create the one origin already names), and push"
+            " the current branch. Tags are not pushed. Nothing about deploying changes: that"
+            " stays manual unless you run `ym ci setup`."
+        ),
+    )
+    q.add_argument("--name", help="repository name (default: the site directory name)")
+    q.add_argument("--owner", help="user or organization (default: your gh login)")
+    q.add_argument("--public", action="store_true", help="create it public (default: private)")
+    q.add_argument("--dry-run", action="store_true", help="show what would be created")
+
+    p = sub.add_parser(
+        "ci",
+        parents=[common],
+        help="deploy from GitHub Actions (opt-in per target): setup, status",
+    )
+    csub = p.add_subparsers(dest="ci_cmd", metavar="ACTION", required=True)
+    q = csub.add_parser(
+        "setup",
         parents=[common],
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        help="set up GitHub environments + secrets for the deploy workflow (needs gh)",
+        help="enable GitHub Actions deploys: environment, CI key, host keys, ci = true",
         description=(
-            "Prepare the site repo on GitHub for .github/workflows/deploy.yml with the GitHub\n"
-            "CLI: create the environment (prod -> production, other targets -> staging),\n"
-            "generate a dedicated CI key, install it on the server over your working login,\n"
-            "check it logs in, and store it as DEPLOY_SSH_KEY; store the server's host keys\n"
-            "from ~/.ssh/known_hosts as DEPLOY_KNOWN_HOSTS. Offers `gh auth login` if needed,\n"
-            "and to create the GitHub repo (private) and push if the site has none yet."
+            "Enable deploys from the site's .github/workflows/deploy.yml with the GitHub CLI:\n"
+            "create the environment (prod -> production, other targets -> staging), generate\n"
+            "a dedicated CI key, install it on the server over your working login, check it\n"
+            "logs in, store it as DEPLOY_SSH_KEY, store the host keys from ~/.ssh/known_hosts\n"
+            "as DEPLOY_KNOWN_HOSTS, and set `ci = true` on the target in site.toml. Offers\n"
+            "`gh auth login`, and `ym repo create` when the site has no GitHub repo yet."
         ),
         epilog=(
             "examples:\n"
-            "  ym gh-setup                 # prod and staging (if defined)\n"
-            "  ym gh-setup prod --dry-run\n"
-            "  ym gh-setup prod --rotate   # replace the CI key"
+            "  ym ci setup                 # prod, staging and targets with ci = true\n"
+            "  ym ci setup prod --dry-run\n"
+            "  ym ci setup prod --rotate   # replace the CI key"
         ),
     )
-    p.add_argument("targets", nargs="*", metavar="TARGET", help="default: prod and staging")
-    p.add_argument(
-        "--repo",
-        metavar="OWNER/NAME",
-        help="GitHub repo (default: from the remote, else <your login>/<site dir name>)",
+    q.add_argument("targets", nargs="*", metavar="TARGET", help="default: prod and staging")
+    q.add_argument("--repo", metavar="OWNER/NAME", help="GitHub repo (default: from the remote)")
+    q.add_argument("--rotate", action="store_true", help="replace an existing DEPLOY_SSH_KEY")
+    q.add_argument("--dry-run", action="store_true", help="show what would be set, change nothing")
+    q = csub.add_parser(
+        "status",
+        parents=[common],
+        help="check the GitHub environments and secrets of ci = true targets (exit 1 if not ready)",
     )
-    p.add_argument(
-        "--create-repo",
-        action="store_true",
-        help="create the repo and push without asking if it doesn't exist",
-    )
-    p.add_argument("--public", action="store_true", help="create it public (default: private)")
-    p.add_argument("--rotate", action="store_true", help="replace an existing DEPLOY_SSH_KEY")
-    p.add_argument("--dry-run", action="store_true", help="show what would be set, change nothing")
+    q.add_argument("targets", nargs="*", metavar="TARGET", help="default: targets with ci = true")
 
     _onboarding_parsers(sub, common)
     return parser
@@ -580,11 +604,20 @@ def _dispatch(args: argparse.Namespace) -> int:
             console.info(f"{args.name}: already {'active' if on else 'inactive'}")
         return EXIT_OK
 
-    if cmd == "gh-setup":
-        from .ghsetup import gh_setup, is_tty
+    if cmd == "repo":
+        from .ci import is_tty
+        from .github import repo_create
 
-        gh_setup(cfg, args.targets, repo=args.repo, create_repo=args.create_repo,
-                 public=args.public, rotate=args.rotate, dry_run=args.dry_run,
+        repo_create(cfg, name=args.name, owner=args.owner, public=args.public,
+                    dry_run=args.dry_run, confirm=_confirm if is_tty() else None)  # fmt: skip
+        return EXIT_OK
+
+    if cmd == "ci":
+        from .ci import ci_setup, ci_status, is_tty
+
+        if args.ci_cmd == "status":
+            return EXIT_OK if ci_status(cfg, args.targets) else EXIT_ERROR
+        ci_setup(cfg, args.targets, repo=args.repo, rotate=args.rotate, dry_run=args.dry_run,
                  confirm=_confirm if is_tty() else None)  # fmt: skip
         return EXIT_OK
 

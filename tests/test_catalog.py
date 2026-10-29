@@ -211,7 +211,7 @@ def test_doctor(site, tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "ok    lock: YOURLS 1.0.0, 0 vendored plugin(s), no drift" in out
     assert "ok    working tree: clean" in out
-    assert "warn  HEAD pushed: no git remote" in out
+    assert "ok    remote: none (local only)" in out
     assert "ok    login: local target (no host)" in out
     assert "FAIL  php: command not found: php" in out
     assert "FAIL  server config" in out and "ym server-config local" in out

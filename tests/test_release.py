@@ -167,7 +167,11 @@ def test_deploy_policy(site, capsys):
         "tag": "v1.0.0-1",
         "forced": False,
     }
+    assert "not on any remote branch" not in capsys.readouterr().err  # no remote: local only
+    git(site, "remote", "add", "origin", str(site / "nowhere.git"))
+    check_deploy(cfg, prod, allow_dirty=False, force=False)
     assert "not on any remote branch" in capsys.readouterr().err
+    git(site, "remote", "remove", "origin")
 
     # dirty tree: refused everywhere unless --allow-dirty; prod still needs --force
     (site / "wip.txt").write_text("x")
@@ -288,3 +292,17 @@ def test_plugin_add(site, upstream, capsys):
     assert (site / "yourls/user/plugins/plug-b/plugin.php").is_file()
     assert 'path   = "plug-b"\nactive = false' in (site / "site.toml").read_text()
     assert main([*S, "plugin", "add", mono.url, "--path", "plug-b"]) == 2  # duplicate
+
+
+def test_release_push_needs_origin(site, capsys):
+    S = ["--site-dir", str(site)]
+    assert main([*S, "release", "--push"]) == 2
+    err = capsys.readouterr().err
+    assert "no git remote `origin`" in err and "ym repo create" in err
+    assert release_tags(site) == []  # refused before tagging
+    bare = site.parent / "origin.git"
+    git(site.parent, "init", "-q", "--bare", str(bare))
+    git(site, "remote", "add", "origin", str(bare))
+    assert main([*S, "release", "--push"]) == 0
+    assert "not on any remote branch" in capsys.readouterr().err  # branch never pushed
+    assert git(bare, "tag") == "v1.0.0-1"

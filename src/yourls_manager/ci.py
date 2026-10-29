@@ -1,19 +1,21 @@
-"""`ym gh-setup`: configure GitHub environments and secrets for the deploy workflow (§13).
+"""`ym ci setup` / `ym ci status`: deploy from GitHub Actions, opt-in per target (§13.2).
 
 The site template's ``.github/workflows/deploy.yml`` deploys target ``prod`` in the
-``production`` environment and every other target in ``staging``, and needs two secrets on
-that environment: ``DEPLOY_SSH_KEY`` (a private key the server accepts) and
-``DEPLOY_KNOWN_HOSTS`` (the server's host keys). This command, using the GitHub CLI:
+``production`` environment and every other target in ``staging``, only for targets with
+``ci = true`` in site.toml, and needs two secrets on that environment: ``DEPLOY_SSH_KEY``
+(a private key the server accepts) and ``DEPLOY_KNOWN_HOSTS`` (the server's host keys).
+
+`ym ci setup`, using the GitHub CLI:
 
 1. checks that ``gh`` is installed and logged in (offers ``gh auth login`` on a terminal);
-2. finds the site's GitHub repository, or creates it (private unless ``--public``) and pushes
-   the current branch, after asking (``--create-repo`` on a non-terminal);
+2. finds the site's GitHub repository (offers `ym repo create` when there is none);
 3. creates the environment if it is missing;
 4. generates a dedicated CI key (ed25519, no passphrase) per environment, installs its
    public half on the server over the working ym login (ssh, or SFTP for sftp targets),
    checks that it logs in, and stores the private half only in the GitHub secret;
 5. takes the host keys from ``~/.ssh/known_hosts`` (falling back to ``ssh-keyscan`` with a
-   fingerprint confirmation).
+   fingerprint confirmation);
+6. sets ``ci = true`` on the target in site.toml (commit it: the workflow reads it).
 
 An existing ``DEPLOY_SSH_KEY`` is kept unless ``--rotate``.
 """
@@ -22,22 +24,20 @@ from __future__ import annotations
 
 import json
 import re
-import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from .config import SiteConfig, TargetSpec
-from .util import UsageError, YMError, console, run, utc_now
+from .config import SiteConfig, TargetSpec, load_site
+from .github import Gh, current_repo, ensure_gh, gh_logged_in, repo_exists
+from .util import UsageError, YMError, console, utc_now
 
 KEY_SECRET = "DEPLOY_SSH_KEY"
 HOSTS_SECRET = "DEPLOY_KNOWN_HOSTS"
 WORKFLOW = ".github/workflows/deploy.yml"
-GH_INSTALL = "https://cli.github.com (Debian/Ubuntu/WSL: `sudo apt install gh`)"
 
 # Appends "$1" to ~/.ssh/authorized_keys unless the exact line is there (run via sh -c).
 AUTHORIZED_KEYS_SCRIPT = (
@@ -47,7 +47,6 @@ AUTHORIZED_KEYS_SCRIPT = (
 )
 
 Confirm = Callable[[str], bool]
-Interactive = Callable[[Sequence[str]], int]
 
 
 def environment_for(target: str) -> str:
@@ -55,139 +54,7 @@ def environment_for(target: str) -> str:
     return "production" if target == "prod" else "staging"
 
 
-# --------------------------------------------------------------------------- gh
-
-
-class Gh:
-    """Thin wrapper around the ``gh`` CLI (no shell; stdin for secret values)."""
-
-    def __init__(self, exe: str = "gh", cwd: Path | None = None):
-        self.exe = exe
-        self.cwd = cwd
-
-    def run(self, *args: str, input: bytes | None = None, check: bool = True
-            ) -> subprocess.CompletedProcess[bytes]:  # fmt: skip
-        console.detail("$ gh " + shlex.join(args))
-        try:
-            proc = subprocess.run([self.exe, *args], cwd=self.cwd, input=input,
-                                  capture_output=True, check=False)  # fmt: skip
-        except FileNotFoundError:
-            raise UsageError(f"the GitHub CLI (gh) is not installed: {GH_INSTALL}") from None
-        if check and proc.returncode != 0:
-            err = proc.stderr.decode(errors="replace").strip()
-            raise YMError(f"gh {' '.join(args[:3])} failed ({proc.returncode})" +
-                          (f": {err}" if err else ""))  # fmt: skip
-        return proc
-
-    def out(self, *args: str) -> str:
-        return self.run(*args).stdout.decode(errors="replace").strip()
-
-
-def ensure_gh(gh: Gh, *, confirm: Confirm | None, interactive: Interactive) -> None:
-    """gh installed and authenticated; offers `gh auth login` when a terminal is there."""
-    if shutil.which(gh.exe) is None:
-        raise UsageError(f"the GitHub CLI (gh) is not installed: {GH_INSTALL}\n"
-                         "Then run `gh auth login` and `ym gh-setup` again.")  # fmt: skip
-    if gh.run("auth", "status", check=False).returncode == 0:
-        return
-    if confirm is None:
-        raise UsageError("gh is not logged in to GitHub; run `gh auth login` first")
-    console.info("gh is installed but not logged in to GitHub.")
-    if not confirm("Run `gh auth login` now?"):
-        raise UsageError("gh is not logged in; run `gh auth login`, then `ym gh-setup` again")
-    if interactive([gh.exe, "auth", "login"]) != 0:
-        raise YMError("`gh auth login` failed")
-    if gh.run("auth", "status", check=False).returncode != 0:
-        raise YMError("gh is still not logged in (see `gh auth status`)")
-
-
-_GITHUB_REMOTE = re.compile(
-    r"^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)"
-    r"(?P<repo>[^/\s]+/[^/\s]+?)(?:\.git)?/?$"
-)
-
-
-def github_repo_of(url: str) -> str | None:
-    m = _GITHUB_REMOTE.match(url.strip())
-    return m["repo"] if m else None
-
-
-def _git_out(root: Path, *args: str) -> str | None:
-    proc = run(["git", *args], cwd=root, check=False)
-    return proc.stdout.decode(errors="replace").strip() if proc.returncode == 0 else None
-
-
-def repo_exists(gh: Gh, repo: str) -> bool:
-    return gh.run("repo", "view", repo, "--json", "name", check=False).returncode == 0
-
-
-def resolve_repo(
-    gh: Gh,
-    root: Path,
-    repo: str | None,
-    *,
-    create: bool = False,
-    public: bool = False,
-    confirm: Confirm | None = None,
-    dry_run: bool = False,
-) -> str:
-    """The site's GitHub repo; offers to create it (and push) when there is none."""
-    if repo and repo.count("/") != 1:
-        raise UsageError(f"--repo must look like OWNER/NAME, got {repo!r}")
-    origin = _git_out(root, "config", "--get", "remote.origin.url")  # as written
-    if repo is None:
-        proc = gh.run("repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner",
-                      check=False)  # fmt: skip
-        name = proc.stdout.decode(errors="replace").strip()
-        if proc.returncode == 0 and "/" in name:
-            return name
-        repo = github_repo_of(origin) if origin else None
-        if repo is None:
-            if origin:
-                raise UsageError(
-                    f"origin is {origin}, not a GitHub repository; pass --repo OWNER/NAME"
-                    " (it is added as remote `github`)"
-                )
-            login = gh.out("api", "user", "-q", ".login")
-            repo = f"{login}/{root.name}"
-    elif repo_exists(gh, repo):
-        return repo
-
-    # The repository doesn't exist yet.
-    if _git_out(root, "rev-parse", "--verify", "-q", "HEAD") is None:
-        raise UsageError("this site repo has no commits yet; commit it first")
-    visibility = "public" if public else "private"
-    console.info(f"GitHub repository {repo} does not exist yet")
-    if dry_run:
-        console.info(f"  would create it ({visibility}) and push the current branch")
-        return repo
-    if not create:
-        if confirm is None:
-            raise UsageError(
-                f"no GitHub repository for this site; pass --create-repo to create {repo}"
-                f" ({visibility}) and push, or --repo OWNER/NAME"
-            )
-        if not confirm(f"Create {repo} ({visibility}) on GitHub and push the current branch?"):
-            raise UsageError("no GitHub repository; nothing changed")
-    origin_repo = github_repo_of(origin) if origin else None
-    if origin_repo is not None and origin_repo.lower() == repo.lower():
-        gh.run("repo", "create", repo, f"--{visibility}")
-        remote = "origin"
-    else:
-        remote = "origin" if origin is None else "github"
-        if _git_out(root, "config", "--get", f"remote.{remote}.url") is not None:
-            raise UsageError(f"remote {remote!r} already exists; pass --repo matching it")
-        gh.run("repo", "create", repo, f"--{visibility}", "--source", str(root),
-               "--remote", remote)  # fmt: skip
-    console.info(f"  created {repo} ({visibility}); remote {remote}")
-    branch = _git_out(root, "rev-parse", "--abbrev-ref", "HEAD") or "HEAD"
-    push = run(["git", "push", "-u", remote, branch], cwd=root, check=False, capture=False)
-    if push.returncode != 0:
-        raise YMError(f"`git push -u {remote} {branch}` failed; push by hand, then run"
-                      " `ym gh-setup` again")  # fmt: skip
-    console.info(f"  pushed {branch} (tags not pushed: a release tag starts a deploy, so push"
-                 " them once the secrets are set)")  # fmt: skip
-    return repo
+# --------------------------------------------------------------------------- github
 
 
 def env_exists(gh: Gh, repo: str, env: str) -> bool:
@@ -344,8 +211,12 @@ def pick_targets(cfg: SiteConfig, names: list[str]) -> list[Plan]:
     if names:
         specs = [cfg.target(n) for n in names]
     else:
-        specs = [cfg.targets[n] for n in ("prod", "staging") if n in cfg.targets]
-        others = sorted(set(cfg.targets) - {"prod", "staging"})
+        specs = [
+            t
+            for n, t in cfg.targets.items()
+            if (n in ("prod", "staging") or t.ci) and not t.is_local
+        ]
+        others = sorted(set(cfg.targets) - {s.name for s in specs})
         if others:
             console.info(f"skipping target(s) {', '.join(others)}: name them to set them up"
                          " (they deploy in the staging environment)")  # fmt: skip
@@ -366,26 +237,97 @@ def pick_targets(cfg: SiteConfig, names: list[str]) -> list[Plan]:
     return plans
 
 
-def gh_setup(
+def find_repo(cfg: SiteConfig, gh: Gh, repo: str | None, *, confirm: Confirm | None,
+              dry_run: bool) -> str:  # fmt: skip
+    if repo:
+        if repo.count("/") != 1:
+            raise UsageError(f"--repo must look like OWNER/NAME, got {repo!r}")
+        if not repo_exists(gh, repo):
+            raise UsageError(f"{repo} does not exist on GitHub (or gh can't see it)")
+        return repo
+    found = current_repo(gh)
+    if found:
+        return found
+    from .github import create_repo, planned_repo
+
+    planned = planned_repo(gh, cfg.root, None, None)
+    if dry_run:
+        console.info(f"no GitHub repository yet: would offer to create {planned}")
+        return planned
+    if confirm is None:
+        raise UsageError("this site has no GitHub repository yet; create it with"
+                         " `ym repo create`, then run this again")  # fmt: skip
+    if not confirm(f"This site has no GitHub repository yet. Create {planned} (private)"
+                   " and push the current branch?"):  # fmt: skip
+        raise UsageError("no GitHub repository; nothing changed (see `ym repo create`)")
+    create_repo(cfg, gh, planned)
+    return planned
+
+
+# --------------------------------------------------------------------------- site.toml
+
+_TABLE = re.compile(r"^\s*\[")
+_CI = re.compile(r"^(\s*ci\s*=\s*)(true|false)(.*)$")
+
+
+def set_ci(cfg: SiteConfig, target: str) -> bool:
+    """Set ``ci = true`` in [deploy.targets.<target>] (text edit). False if already set."""
+    if cfg.target(target).ci:
+        return False
+    path = cfg.site_file
+    original = path.read_text(encoding="utf-8")
+    lines = original.splitlines(keepends=True)
+    head = re.compile(rf"^\s*\[\s*deploy\.targets\.{re.escape(target)}\s*\]")
+    start = next((i for i, ln in enumerate(lines) if head.match(ln)), None)
+    if start is None:
+        raise UsageError(f"could not find [deploy.targets.{target}] in site.toml; add"
+                         " `ci = true` there by hand")  # fmt: skip
+    end = start + 1
+    while end < len(lines) and not _TABLE.match(lines[end]):
+        end += 1
+    for k in range(start + 1, end):
+        m = _CI.match(lines[k].rstrip("\n"))
+        if m:
+            lines[k] = f"{m[1]}true{m[3]}\n"
+            break
+    else:
+        last = end
+        while last > start + 1 and not lines[last - 1].strip():
+            last -= 1  # keep blank lines (and comments of the next table) after the key
+        while last > start + 1 and lines[last - 1].lstrip().startswith("#"):
+            last -= 1
+        if last > start + 1 and not lines[last - 1].endswith("\n"):
+            lines[last - 1] += "\n"
+        lines.insert(last, "ci          = true             # deploy from GitHub Actions\n")
+    path.write_text("".join(lines), encoding="utf-8")
+    try:
+        if not load_site(cfg.root).target(target).ci:
+            raise UsageError("edit did not take effect")
+    except Exception:
+        path.write_text(original, encoding="utf-8")
+        raise
+    return True
+
+
+# --------------------------------------------------------------------------- setup
+
+
+def ci_setup(
     cfg: SiteConfig,
     targets: list[str],
     *,
     repo: str | None = None,
-    create_repo: bool = False,
-    public: bool = False,
     rotate: bool = False,
     dry_run: bool = False,
     confirm: Confirm | None = None,
-    interactive: Interactive | None = None,
     gh: Gh | None = None,
 ) -> None:
-    from .sshsetup import _terminal, check_ssh
+    from .sshsetup import check_ssh
 
     gh = gh or Gh(cwd=cfg.root)
     plans = pick_targets(cfg, targets)
-    ensure_gh(gh, confirm=confirm, interactive=interactive or _terminal)
-    repo = resolve_repo(gh, cfg.root, repo, create=create_repo, public=public, confirm=confirm,
-                        dry_run=dry_run)  # fmt: skip
+    ensure_gh(gh, confirm=confirm)
+    repo = find_repo(cfg, gh, repo, confirm=confirm, dry_run=dry_run)
     console.info(f"repository: {repo}")
     if not (cfg.root / WORKFLOW).is_file():
         console.warn(f"{WORKFLOW} is missing; these secrets are for the site template's deploy"
@@ -415,11 +357,14 @@ def gh_setup(
                 else f"keep the existing {KEY_SECRET}"
             )
             console.info(f"  would {what}")
+            if not spec.ci:
+                console.info("  would set ci = true in site.toml")
         prepared.append((spec, env, exists, KEY_SECRET in have, new_key, hosts))
     if dry_run:
         console.info("dry run: nothing changed")
         return
 
+    changed_toml = False
     for spec, env, exists, had_key, new_key, hosts in prepared:
         console.step(f"{spec.name}: configure environment {env!r}")
         if not exists:
@@ -440,8 +385,73 @@ def gh_setup(
             console.info(f"  {KEY_SECRET} already set; kept (--rotate replaces it)")
         set_secret(gh, repo, env, HOSTS_SECRET, "\n".join(hosts) + "\n")
         console.info(f"  set {HOSTS_SECRET} ({len(hosts)} line(s))")
-    console.info("done: push a release tag (`ym release --push`) or run the deploy workflow"
-                 " by hand (`gh workflow run deploy.yml -f target=prod`)")  # fmt: skip
+        if set_ci(cfg, spec.name):
+            console.info("  site.toml: ci = true")
+            changed_toml = True
+    if changed_toml:
+        console.info(
+            "commit site.toml (the workflow reads `ci` from the commit it deploys):"
+            ' git commit -m "Deploy from GitHub Actions" site.toml && git push'
+        )
+    console.info(
+        "done: release tags (`ym release --push`) now deploy from GitHub Actions; or"
+        " run the workflow by hand (`gh workflow run deploy.yml -f target=prod`)"
+    )
+
+
+# --------------------------------------------------------------------------- status
+
+
+@dataclass
+class CiCheck:
+    target: str
+    ok: bool
+    problems: list[str]
+
+
+def ci_check(cfg: SiteConfig, spec: TargetSpec, gh: Gh, repo: str) -> CiCheck:
+    env = environment_for(spec.name)
+    problems = []
+    if not env_exists(gh, repo, env):
+        problems.append(f"environment {env!r} does not exist")
+    else:
+        missing = {KEY_SECRET, HOSTS_SECRET} - env_secrets(gh, repo, env)
+        if missing:
+            problems.append(f"environment {env!r} lacks {', '.join(sorted(missing))}")
+    if not (cfg.root / WORKFLOW).is_file():
+        problems.append(f"{WORKFLOW} is missing")
+    return CiCheck(spec.name, not problems, problems)
+
+
+def ci_status(cfg: SiteConfig, targets: list[str], *, gh: Gh | None = None) -> bool:
+    """Print the CI state of the targets (default: all with ci = true). True when ready."""
+    gh = gh or Gh(cwd=cfg.root)
+    specs = [cfg.target(n) for n in targets] if targets else [
+        t for t in cfg.targets.values() if t.ci
+    ]  # fmt: skip
+    if not specs:
+        console.info("no target has ci = true: every deploy runs from this machine"
+                     " (`ym ci setup` enables GitHub Actions deploys)")  # fmt: skip
+        return True
+    if not gh_logged_in(gh):
+        raise UsageError("checking needs the GitHub CLI, logged in (`gh auth login`)")
+    repo = current_repo(gh)
+    if repo is None:
+        console.info("FAIL  no GitHub repository for this site (`ym repo create`)")
+        return False
+    console.info(f"repository: {repo}")
+    ok = True
+    for spec in specs:
+        res = ci_check(cfg, spec, gh, repo)
+        flag = "" if spec.ci else " (ci = false: the workflow skips it)"
+        env = environment_for(spec.name)
+        if res.ok:
+            console.info(f"ok    {spec.name}: environment {env!r} has both secrets{flag}")
+        else:
+            console.info(f"FAIL  {spec.name}: {'; '.join(res.problems)}{flag}"
+                         f"  -> ym ci setup {spec.name}")  # fmt: skip
+        ok &= res.ok
+    return ok
 
 
 def is_tty() -> bool:

@@ -89,6 +89,7 @@ class TargetSpec:
     url: str = ""
     state_dir: str = ""  # sftp only: manifest + release.json (design §10.3)
     accept: str = "any"  # deploy policy (design §11.5): "any" | "release"
+    ci: bool = False  # deployed by the site's GitHub Actions workflow (design §13)
     given: frozenset[str] = frozenset()  # keys set explicitly in site.toml
 
     @property
@@ -424,6 +425,11 @@ def _parse_target(name: str, raw: Any, site: SiteInfo, warnings: list[str]) -> T
     accept = r.str("accept", "any")
     if accept not in ("any", "release"):
         raise ConfigError(f"{prefix}.accept", f"must be 'any' or 'release', got {accept!r}")
+    ci = r.bool("ci", False)
+    if ci and host is None:
+        raise ConfigError(
+            f"{prefix}.ci", "needs a host (GitHub Actions can't deploy a local target)"
+        )
     state_dir = ""
     checked = [("path", path), ("config_file", config_file)]
     if ttype == "sftp":
@@ -468,6 +474,7 @@ def _parse_target(name: str, raw: Any, site: SiteInfo, warnings: list[str]) -> T
         backup_dir=backup_dir,
         protect=protect,
         backup_keep=backup_keep,
+        ci=ci,
         url=url,
         state_dir=state_dir,
         accept=accept,

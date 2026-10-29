@@ -163,6 +163,16 @@ def _require_clean(cfg: SiteConfig) -> None:
         raise UsageError("yourls/ differs from yourls.lock.json (see `ym status`)")
 
 
+def has_remote(root: Path, name: str | None = None) -> bool:
+    """Any git remote (or the named one)."""
+    remotes = _git(root, "remote", check=False).split()
+    return bool(remotes) if name is None else name in remotes
+
+
+def on_remote_branch(root: Path, rev: str = "HEAD") -> bool:
+    return bool(_git(root, "branch", "-r", "--contains", rev, check=False))
+
+
 def release(
     cfg: SiteConfig,
     *,
@@ -175,6 +185,11 @@ def release(
     from .build import build_site
 
     _require_clean(cfg)
+    if push and not has_remote(cfg.root, "origin"):
+        raise UsageError(
+            "--push: no git remote `origin`. Add one (`git remote add origin <url>`) or create"
+            " a GitHub repository with `ym repo create`; or release without --push"
+        )
     tags = release_tags(cfg.root)
     if promote:
         rcs = [t for t in tags if t.is_rc]
@@ -208,6 +223,11 @@ def release(
     console.info(f"tagged {name}")
     if push:
         console.step(f"push {name}")
+        if not on_remote_branch(cfg.root, target_rev):
+            console.warn(
+                "the released commit is not on any remote branch: push your branch too"
+                " (`git push`), or the tag points at a commit no branch on origin has"
+            )
         run(["git", "push", "origin", f"refs/tags/{name}"], cwd=cfg.root)
     else:
         console.info(f"push it with: git push origin {name}")
@@ -259,7 +279,7 @@ def check_deploy(
             )
         console.warn(f"FORCED deploy to {spec.name}: {why} (recorded in release.json)")
         forced = True
-    if not dirty and not _git(root, "branch", "-r", "--contains", "HEAD", check=False):
+    if not dirty and has_remote(root) and not on_remote_branch(root):
         console.warn("HEAD is not on any remote branch yet: push it so the deploy is traceable")
     return {"tag": tag, "forced": forced}
 
@@ -272,7 +292,9 @@ def move_marker(cfg: SiteConfig, spec: TargetSpec) -> None:
     branch = MARKER_PREFIX + spec.name
     _git(root, "branch", "-f", branch, "HEAD")
     console.info(f"marker {branch} -> {_short(commit_of(root, 'HEAD'))}")
-    if cfg.push_markers:
+    if cfg.push_markers and not has_remote(root, "origin"):
+        console.warn(f"[release] push_markers: no git remote `origin`; {branch} stays local")
+    elif cfg.push_markers:
         proc = run(["git", "push", "-f", "origin", f"{branch}:refs/heads/{branch}"],
                    cwd=root, check=False)  # fmt: skip
         if proc.returncode != 0:

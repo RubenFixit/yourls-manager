@@ -459,27 +459,36 @@ writes the manifest into `dist/` at build time, reads the deployed manifest duri
 `ym adopt` / before `ym deploy` to detect admin-side changes, and `ym plugin add/remove/
 enable/disable` keep both in step.
 
-## 13. `ym gh-setup` (v0.6)
+## 13. GitHub: `ym repo create`, `ym ci setup|status` (v0.6)
+
+Two separate features. Storing the site on GitHub doesn't imply deploying from it, and a site
+without any git remote is a normal, supported setup (deploys run from the user's machine).
+Commands other than these never point users at CI.
+
+### 13.1 `ym repo create [--name NAME] [--owner OWNER] [--public] [--dry-run]` (`github.py`)
+
+gh installed and logged in (offer `gh auth login` on a terminal). Already on GitHub (`gh repo
+view` finds it) → say so, exit 0. Repo to create: the one `origin` names (raw
+`remote.origin.url`, GitHub https/ssh forms; `--name`/`--owner` must agree), else
+`<--owner or gh login>/<--name or site dir name>`. A non-GitHub `origin` → exit 2 (the site
+is stored there; rename the remote to switch). Exists already → exit 2 with the
+`git remote add` line. Needs a commit. `gh repo create R --private|--public` (+ `--source .
+--remote origin` when there is no origin), then `git push -u origin <branch>`; no tags.
+
+### 13.2 `ym ci setup [TARGET ...] [--repo OWNER/NAME] [--rotate] [--dry-run]` (`ci.py`)
 
 Prepares GitHub for the site template's `deploy.yml`: environment `production` for target
 `prod`, `staging` for every other target (the workflow's mapping), each with secrets
-`DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS`. Needs the GitHub CLI.
-
-`ym gh-setup [TARGET ...] [--repo OWNER/NAME] [--rotate] [--dry-run]`
+`DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS`, and target key `ci = true` (bool, default false;
+needs a host), which the workflow requires before it deploys a target.
 
 1. gh: missing → exit 2 with install hint; not logged in → on a terminal offer
-   `gh auth login` (run attached to the terminal), else exit 2.
-2. Repo: `--repo`, else `gh repo view` in the site root. Missing → the repo to create is
-   `--repo`, else the one `origin` names (raw `remote.origin.url`, GitHub https/ssh forms),
-   else `<gh login>/<site dir name>`; a non-GitHub `origin` without `--repo` is an error.
-   Needs a commit. Ask on a terminal (`--create-repo` skips it; no terminal → exit 2),
-   private unless `--public`. `origin` already names it → `gh repo create R --private`;
-   else `gh repo create R --source . --remote origin|github` (`github` when `origin` is
-   taken). Then `git push -u <remote> <branch>`, no tags (a release tag starts a deploy
-   before the secrets exist). `--dry-run` only reports. Warn if
-   `.github/workflows/deploy.yml` is missing.
-3. Targets: default `prod` and `staging` (others are named explicitly; they deploy in
-   `staging`). Refuse local targets and two targets sharing an environment.
+   `gh auth login`, else exit 2.
+2. Repo: `--repo` (must exist), else `gh repo view`; none → on a terminal offer to create it
+   (same as `ym repo create`, private), else exit 2 pointing at `ym repo create`.
+3. Targets: default `prod`, `staging` and every `ci = true` target that has a host (others
+   are named explicitly; they deploy in `staging`). Refuse local targets and two targets
+   sharing an environment.
 4. Lookup first, change nothing until every target passed: environment exists?
    (`gh api repos/R/environments/E`), its secret names (`gh secret list --env`), host keys,
    and — when a key will be made — that the normal ym login works (`check_ssh`, password
@@ -494,7 +503,16 @@ Prepares GitHub for the site template's `deploy.yml`: environment `production` f
    log in with only that key (`-F /dev/null -o IdentitiesOnly=yes -o IdentityAgent=none`;
    sftp: no agent, no key search, no ssh config) like CI does; `gh secret set` from stdin;
    delete the temp dir. `--rotate` leaves the old key authorized and says so.
-   Always (re)set `DEPLOY_KNOWN_HOSTS`.
+   Always (re)set `DEPLOY_KNOWN_HOSTS`. Then set `ci = true` in the target's table (text
+   edit, re-parsed) and tell the user to commit site.toml.
+
+`ym ci status [TARGET ...]`: for `ci = true` targets (or the named ones), environment exists
+and has both secrets, workflow file present; exit 1 otherwise. `ym doctor` runs the same
+check for `ci = true` targets when gh is logged in (warn when it can't check).
+
+Other commands without a remote: `ym release --push` refuses before tagging ("add a remote or
+`ym repo create`"); `ym deploy` only warns about an unpushed HEAD when a remote exists;
+`ym doctor` reports "remote: none (local only)" as ok.
 
 Not done: removing old `ym-ci-` keys from the server, required reviewers or tag policies on
 the environments (configure in GitHub), `YM_<TARGET>_PASSWORD` as a secret for
