@@ -6,20 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-28
+
+Plugin catalog and `ym doctor`.
+
 ### Added
 
-- `ym plugin list`, `ym plugin enable NAME`, `ym plugin disable NAME` (edits `active` in
-  site.toml, keeping comments; applied on the next deploy).
 - `ym plugin search [QUERY] [--category SLUG] [--refresh] [--json]`: search the awesome-yourls
   plugin catalog (cached for a day); plugins already in site.toml are marked.
-- `ym plugin add NAME|URL [--name] [--ref] [--path] [--inactive] [--no-sync]`: add a plugin by
-  catalog name or from a clone URL / GitHub/GitLab/Codeberg/Bitbucket project page
-  (`/tree/<ref>/<dir>` sets ref and path). Finds plugin.php at the top or one directory down
-  (asks when there are several), shows its header, and is rolled back if it can't be vendored.
+- `ym plugin add NAME`: add a plugin by its catalog name (exact, case-insensitive or unique
+  prefix). For names and URLs, plugin.php is now also found one directory down (asks on a
+  terminal when there are several, else `--path`), the plugin header (name, version,
+  description, requirements) is shown, and `--no-sync` only edits site.toml. Directory names
+  used by core's bundled plugins or `overlay/` are refused.
 - `ym doctor [TARGET]`: read-only report of tools, site repo (site.toml, lock and drift,
   uncommitted and unpushed changes) and targets (login, PHP, server config, https, install /
   upgrade state, deployed commit vs HEAD); exits 1 on failures.
-
 - `ym plugin list` shows each plugin's header version; `--json`, and `--check` (asks upstream
   for newer commits, exit 10 if any).
 - `ym plugin apply TARGET`, the new name of `ym plugins TARGET` (kept as an alias).
@@ -27,6 +29,21 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 
 - New dependency: PyYAML (to read the plugin catalog).
+
+## [0.4.3] - 2026-10-28
+
+### Added
+
+- `ym plugin add URL [--name] [--ref] [--path] [--inactive]`: add a plugin from a clone URL or
+  a GitHub/GitLab/Codeberg/Bitbucket project page (`/tree/<ref>/<dir>` sets ref and path);
+  rolled back if the plugin can't be vendored.
+
+## [0.4.2] - 2026-10-28
+
+### Added
+
+- `ym plugin list`, `ym plugin enable NAME`, `ym plugin disable NAME` (edits `active` in
+  site.toml, keeping comments; applied on the next deploy).
 - `ym plugin remove NAME [--keep-files]`: delete the plugin's `[[plugins]]` block and its
   vendored copy; the next deploy deactivates it and removes its files (its data stays).
 
@@ -152,7 +169,10 @@ Onboarding commands that work from the globally installed tool, before a site re
   JSON-on-stdout contract.
 - Redirect verification from `tests/redirects.toml` plus a JSON health check.
 
-[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.4.3...v0.5.0
+[0.4.3]: https://github.com/RubenFixit/yourls-manager/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/RubenFixit/yourls-manager/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/RubenFixit/yourls-manager/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.2.1...v0.3.0

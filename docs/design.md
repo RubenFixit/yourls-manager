@@ -359,7 +359,7 @@ plugins, YOURLS version, DB version. ym would read it over SFTP for adopt/status
 
 ---
 
-## 11. Manager commands and release flow (v0.4, planned)
+## 11. Manager commands and release flow (v0.4–v0.5, built except `ym releases`)
 
 ### 11.1 Plugins: `ym plugin …`
 
