@@ -206,7 +206,8 @@ def build_parser() -> argparse.ArgumentParser:
             "CLI: create the environment (prod -> production, other targets -> staging),\n"
             "generate a dedicated CI key, install it on the server over your working login,\n"
             "check it logs in, and store it as DEPLOY_SSH_KEY; store the server's host keys\n"
-            "from ~/.ssh/known_hosts as DEPLOY_KNOWN_HOSTS. Offers `gh auth login` if needed."
+            "from ~/.ssh/known_hosts as DEPLOY_KNOWN_HOSTS. Offers `gh auth login` if needed,\n"
+            "and to create the GitHub repo (private) and push if the site has none yet."
         ),
         epilog=(
             "examples:\n"
@@ -216,7 +217,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument("targets", nargs="*", metavar="TARGET", help="default: prod and staging")
-    p.add_argument("--repo", metavar="OWNER/NAME", help="GitHub repo (default: from the remote)")
+    p.add_argument(
+        "--repo",
+        metavar="OWNER/NAME",
+        help="GitHub repo (default: from the remote, else <your login>/<site dir name>)",
+    )
+    p.add_argument(
+        "--create-repo",
+        action="store_true",
+        help="create the repo and push without asking if it doesn't exist",
+    )
+    p.add_argument("--public", action="store_true", help="create it public (default: private)")
     p.add_argument("--rotate", action="store_true", help="replace an existing DEPLOY_SSH_KEY")
     p.add_argument("--dry-run", action="store_true", help="show what would be set, change nothing")
 
@@ -572,7 +583,8 @@ def _dispatch(args: argparse.Namespace) -> int:
     if cmd == "gh-setup":
         from .ghsetup import gh_setup, is_tty
 
-        gh_setup(cfg, args.targets, repo=args.repo, rotate=args.rotate, dry_run=args.dry_run,
+        gh_setup(cfg, args.targets, repo=args.repo, create_repo=args.create_repo,
+                 public=args.public, rotate=args.rotate, dry_run=args.dry_run,
                  confirm=_confirm if is_tty() else None)  # fmt: skip
         return EXIT_OK
 

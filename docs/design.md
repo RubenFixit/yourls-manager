@@ -469,9 +469,15 @@ Prepares GitHub for the site template's `deploy.yml`: environment `production` f
 
 1. gh: missing → exit 2 with install hint; not logged in → on a terminal offer
    `gh auth login` (run attached to the terminal), else exit 2.
-2. Repo: `--repo`, else `gh repo view` in the site root (no GitHub remote → hint
-   `gh repo create --source . --private --push`). Warn if `.github/workflows/deploy.yml` is
-   missing.
+2. Repo: `--repo`, else `gh repo view` in the site root. Missing → the repo to create is
+   `--repo`, else the one `origin` names (raw `remote.origin.url`, GitHub https/ssh forms),
+   else `<gh login>/<site dir name>`; a non-GitHub `origin` without `--repo` is an error.
+   Needs a commit. Ask on a terminal (`--create-repo` skips it; no terminal → exit 2),
+   private unless `--public`. `origin` already names it → `gh repo create R --private`;
+   else `gh repo create R --source . --remote origin|github` (`github` when `origin` is
+   taken). Then `git push -u <remote> <branch>`, no tags (a release tag starts a deploy
+   before the secrets exist). `--dry-run` only reports. Warn if
+   `.github/workflows/deploy.yml` is missing.
 3. Targets: default `prod` and `staging` (others are named explicitly; they deploy in
    `staging`). Refuse local targets and two targets sharing an environment.
 4. Lookup first, change nothing until every target passed: environment exists?

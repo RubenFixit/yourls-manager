@@ -6,11 +6,13 @@ that environment: ``DEPLOY_SSH_KEY`` (a private key the server accepts) and
 ``DEPLOY_KNOWN_HOSTS`` (the server's host keys). This command, using the GitHub CLI:
 
 1. checks that ``gh`` is installed and logged in (offers ``gh auth login`` on a terminal);
-2. creates the environment if it is missing;
-3. generates a dedicated CI key (ed25519, no passphrase) per environment, installs its
+2. finds the site's GitHub repository, or creates it (private unless ``--public``) and pushes
+   the current branch, after asking (``--create-repo`` on a non-terminal);
+3. creates the environment if it is missing;
+4. generates a dedicated CI key (ed25519, no passphrase) per environment, installs its
    public half on the server over the working ym login (ssh, or SFTP for sftp targets),
    checks that it logs in, and stores the private half only in the GitHub secret;
-4. takes the host keys from ``~/.ssh/known_hosts`` (falling back to ``ssh-keyscan`` with a
+5. takes the host keys from ``~/.ssh/known_hosts`` (falling back to ``ssh-keyscan`` with a
    fingerprint confirmation).
 
 An existing ``DEPLOY_SSH_KEY`` is kept unless ``--rotate``.
@@ -19,6 +21,7 @@ An existing ``DEPLOY_SSH_KEY`` is kept unless ``--rotate``.
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -29,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import SiteConfig, TargetSpec
-from .util import UsageError, YMError, console, utc_now
+from .util import UsageError, YMError, console, run, utc_now
 
 KEY_SECRET = "DEPLOY_SSH_KEY"
 HOSTS_SECRET = "DEPLOY_KNOWN_HOSTS"
@@ -98,19 +101,93 @@ def ensure_gh(gh: Gh, *, confirm: Confirm | None, interactive: Interactive) -> N
         raise YMError("gh is still not logged in (see `gh auth status`)")
 
 
-def resolve_repo(gh: Gh, repo: str | None) -> str:
-    if repo:
-        if repo.count("/") != 1:
-            raise UsageError(f"--repo must look like OWNER/NAME, got {repo!r}")
+_GITHUB_REMOTE = re.compile(
+    r"^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)"
+    r"(?P<repo>[^/\s]+/[^/\s]+?)(?:\.git)?/?$"
+)
+
+
+def github_repo_of(url: str) -> str | None:
+    m = _GITHUB_REMOTE.match(url.strip())
+    return m["repo"] if m else None
+
+
+def _git_out(root: Path, *args: str) -> str | None:
+    proc = run(["git", *args], cwd=root, check=False)
+    return proc.stdout.decode(errors="replace").strip() if proc.returncode == 0 else None
+
+
+def repo_exists(gh: Gh, repo: str) -> bool:
+    return gh.run("repo", "view", repo, "--json", "name", check=False).returncode == 0
+
+
+def resolve_repo(
+    gh: Gh,
+    root: Path,
+    repo: str | None,
+    *,
+    create: bool = False,
+    public: bool = False,
+    confirm: Confirm | None = None,
+    dry_run: bool = False,
+) -> str:
+    """The site's GitHub repo; offers to create it (and push) when there is none."""
+    if repo and repo.count("/") != 1:
+        raise UsageError(f"--repo must look like OWNER/NAME, got {repo!r}")
+    origin = _git_out(root, "config", "--get", "remote.origin.url")  # as written
+    if repo is None:
+        proc = gh.run("repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner",
+                      check=False)  # fmt: skip
+        name = proc.stdout.decode(errors="replace").strip()
+        if proc.returncode == 0 and "/" in name:
+            return name
+        repo = github_repo_of(origin) if origin else None
+        if repo is None:
+            if origin:
+                raise UsageError(
+                    f"origin is {origin}, not a GitHub repository; pass --repo OWNER/NAME"
+                    " (it is added as remote `github`)"
+                )
+            login = gh.out("api", "user", "-q", ".login")
+            repo = f"{login}/{root.name}"
+    elif repo_exists(gh, repo):
         return repo
-    proc = gh.run("repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner", check=False)
-    name = proc.stdout.decode(errors="replace").strip()
-    if proc.returncode != 0 or "/" not in name:
-        raise UsageError(
-            "could not find the GitHub repository of this site (no GitHub remote?).\n"
-            "Push it first (`gh repo create --source . --private --push`) or pass --repo."
-        )
-    return name
+
+    # The repository doesn't exist yet.
+    if _git_out(root, "rev-parse", "--verify", "-q", "HEAD") is None:
+        raise UsageError("this site repo has no commits yet; commit it first")
+    visibility = "public" if public else "private"
+    console.info(f"GitHub repository {repo} does not exist yet")
+    if dry_run:
+        console.info(f"  would create it ({visibility}) and push the current branch")
+        return repo
+    if not create:
+        if confirm is None:
+            raise UsageError(
+                f"no GitHub repository for this site; pass --create-repo to create {repo}"
+                f" ({visibility}) and push, or --repo OWNER/NAME"
+            )
+        if not confirm(f"Create {repo} ({visibility}) on GitHub and push the current branch?"):
+            raise UsageError("no GitHub repository; nothing changed")
+    origin_repo = github_repo_of(origin) if origin else None
+    if origin_repo is not None and origin_repo.lower() == repo.lower():
+        gh.run("repo", "create", repo, f"--{visibility}")
+        remote = "origin"
+    else:
+        remote = "origin" if origin is None else "github"
+        if _git_out(root, "config", "--get", f"remote.{remote}.url") is not None:
+            raise UsageError(f"remote {remote!r} already exists; pass --repo matching it")
+        gh.run("repo", "create", repo, f"--{visibility}", "--source", str(root),
+               "--remote", remote)  # fmt: skip
+    console.info(f"  created {repo} ({visibility}); remote {remote}")
+    branch = _git_out(root, "rev-parse", "--abbrev-ref", "HEAD") or "HEAD"
+    push = run(["git", "push", "-u", remote, branch], cwd=root, check=False, capture=False)
+    if push.returncode != 0:
+        raise YMError(f"`git push -u {remote} {branch}` failed; push by hand, then run"
+                      " `ym gh-setup` again")  # fmt: skip
+    console.info(f"  pushed {branch} (tags not pushed: a release tag starts a deploy, so push"
+                 " them once the secrets are set)")  # fmt: skip
+    return repo
 
 
 def env_exists(gh: Gh, repo: str, env: str) -> bool:
@@ -294,6 +371,8 @@ def gh_setup(
     targets: list[str],
     *,
     repo: str | None = None,
+    create_repo: bool = False,
+    public: bool = False,
     rotate: bool = False,
     dry_run: bool = False,
     confirm: Confirm | None = None,
@@ -305,7 +384,8 @@ def gh_setup(
     gh = gh or Gh(cwd=cfg.root)
     plans = pick_targets(cfg, targets)
     ensure_gh(gh, confirm=confirm, interactive=interactive or _terminal)
-    repo = resolve_repo(gh, repo)
+    repo = resolve_repo(gh, cfg.root, repo, create=create_repo, public=public, confirm=confirm,
+                        dry_run=dry_run)  # fmt: skip
     console.info(f"repository: {repo}")
     if not (cfg.root / WORKFLOW).is_file():
         console.warn(f"{WORKFLOW} is missing; these secrets are for the site template's deploy"
