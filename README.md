@@ -207,7 +207,7 @@ If the database has to go back too, restore the dump taken before the bad deploy
 
 ```sh
 ym template-update                          # pull the latest yourls-site-template changes
-ym template-update --manager-version v0.5.0 # also bump the yourls-manager pin in pyproject.toml
+ym template-update --manager-version v0.6.0 # also bump the yourls-manager pin in pyproject.toml
 ```
 
 then review the diff and commit. Files you own (`site.toml`, `tests/redirects.toml`, branding

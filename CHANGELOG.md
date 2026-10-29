@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-29
+
+GitHub: store the site there, and opt-in deploys from GitHub Actions.
+
 ### Added
 
 - `ym repo create [--name] [--owner] [--public] [--dry-run]`: create the site's GitHub
@@ -196,7 +200,8 @@ Onboarding commands that work from the globally installed tool, before a site re
   JSON-on-stdout contract.
 - Redirect verification from `tests/redirects.toml` plus a JSON health check.
 
-[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/RubenFixit/yourls-manager/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/RubenFixit/yourls-manager/compare/v0.4.1...v0.4.2
