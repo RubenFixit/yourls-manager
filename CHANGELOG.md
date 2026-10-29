@@ -34,6 +34,8 @@ All notable changes to this project are documented here. The format follows
 
 - Hints and next steps printed by `doctor`, `ci`, `adopt`, `new`, `deploy` and the wizard
   use the new names. The module `sshsetup` is now `login` (`check_ssh` → `check_login`).
+- `ym deploy --help` groups the options by target type (all / rsync / sftp) and summarizes
+  what each type does.
 
 ### Deprecated
 

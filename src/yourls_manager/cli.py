@@ -127,28 +127,40 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-drift", action="store_true", help="build even if yourls/ differs from the lock"
     )
 
-    p = sub.add_parser("deploy", parents=[common], help="build and deploy to a target")
-    p.add_argument("target")
-    p.add_argument("--dry-run", action="store_true", help="show what would change, then stop")
-    p.add_argument("--no-build", action="store_true", help="deploy the existing build output")
-    p.add_argument(
-        "--skip-backup",
-        action="store_true",
-        help="do not dump the database first (sftp targets never do)",
+    p = sub.add_parser(
+        "deploy",
+        parents=[common],
+        help="build and deploy to a target",
+        description=(
+            "rsync targets: build, preflight, DB backup, rsync, DB upgrade, plugins, verify."
+            " sftp targets: build, upload changed files, delete files ym deployed before,"
+            " then print the browser steps (install/upgrade, plugins) and verify."
+        ),
     )
-    p.add_argument("--skip-verify", action="store_true", help="do not run verify afterwards")
-    p.add_argument(
+    p.add_argument("target")
+    g = p.add_argument_group("all targets")
+    g.add_argument("--dry-run", action="store_true", help="show what would change, then stop")
+    g.add_argument("--no-build", action="store_true", help="deploy the existing build output")
+    g.add_argument("--skip-verify", action="store_true", help="do not run verify afterwards")
+    g.add_argument(
         "--allow-dirty", action="store_true", help="deploy even with uncommitted changes"
     )
-    p.add_argument(
+    g.add_argument(
         "--force",
         action="store_true",
         help='override the target\'s accept = "release" policy (recorded in release.json)',
     )
-    p.add_argument(
+    g = p.add_argument_group("rsync targets")
+    g.add_argument(
+        "--skip-backup",
+        action="store_true",
+        help="do not dump the database first (sftp targets never back it up)",
+    )
+    g = p.add_argument_group("sftp targets")
+    g.add_argument(
         "--verify-remote",
         action="store_true",
-        help="sftp targets: stat every deployed file and re-upload ones changed on the server",
+        help="stat every deployed file and re-upload the ones changed on the server",
     )
 
     p = sub.add_parser("verify", parents=[common], help="health check + redirect tests")
