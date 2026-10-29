@@ -21,7 +21,7 @@ On the server, one of:
 
 - **Shell access (`rsync` target, recommended):** **PHP ≥ 8.1** with the CLI, plus
   `mysqldump` and `gzip`; SSH access with **key authentication** (`ym` runs ssh
-  non-interactively and never answers password prompts; `ym ssh-setup prod` or the wizard
+  non-interactively and never answers password prompts; `ym target login prod` or the wizard
   creates and installs a key for you).
 - **SFTP only (`sftp` target):** for hosts without shell access. See
   [SFTP targets](#sftp-targets) for what changes (no DB backup; install/upgrade and
@@ -52,8 +52,8 @@ Or run the steps yourself:
 ```sh
 ym new my-site                      # answer the template questions (deploy type: rsync or sftp); vendors core + plugins, git init
 cd my-site
-ym ssh-setup prod                   # check key login; create + install a key if needed
-ym server-config prod               # write the server-local config (DB, cookie key, admin user)
+ym target login prod                   # check key login; create + install a key if needed
+ym target config prod               # write the server-local config (DB, cookie key, admin user)
 ym deploy prod --dry-run            # build and show what rsync would change
 ym deploy prod                      # deploy for real
 ```
@@ -65,13 +65,13 @@ On the first deploy to an empty database, `ym` uploads the files and then asks y
 ym plugin apply prod                # activate the plugins marked active in site.toml
 ```
 
-Only SFTP on your host? Answer `sftp` to the deploy type question. `ym ssh-setup`,
-`ym server-config` and `ym deploy` then work over SFTP; activate the plugins in
+Only SFTP on your host? Answer `sftp` to the deploy type question. `ym target login`,
+`ym target config` and `ym deploy` then work over SFTP; activate the plugins in
 `https://<your site>/admin/plugins.php` instead of `ym plugin apply` (every deploy lists them). See
 [SFTP targets](#sftp-targets).
 
 If you leave the deploy host empty when `ym new` asks, the `prod` target is written to
-`site.toml` commented out. Uncomment and fill it in before `ym server-config prod`.
+`site.toml` commented out. Uncomment and fill it in before `ym target config prod`.
 
 ### 3B. Adopt and update an existing YOURLS install
 
@@ -94,7 +94,7 @@ cd my-site
 # If you didn't give a deploy host to `ym new`, fill in [deploy.targets.prod] in site.toml now.
 ym adopt --from-target prod         # snapshot the live site; vendor its core version; fill overlay/
 less adopt-review/REPORT.md         # versions, plugins, files to merge by hand, parity summary
-ym server-config prod --from-existing   # copy the live config to the server-local location
+ym target config prod --from-existing   # copy the live config to the server-local location
 ym deploy prod --dry-run            # should show (almost) no changes
 ym deploy prod                      # parity deploy: same code the site runs today
 git add -A && git commit -m "Adopt existing install"
@@ -125,7 +125,7 @@ with your host's tools first.
 ### DreamHost notes
 
 - **SSH user:** in the panel, give the site's user *SSH* (shell) access. Then run
-  `ym ssh-setup prod`: it creates a key if you have none, installs it with `ssh-copy-id`
+  `ym target login prod`: it creates a key if you have none, installs it with `ssh-copy-id`
   (asking for the SSH password once and to trust the host key) and checks that key login works.
 - **PHP CLI:** plain `php` is often older than the site's PHP. Set the target's `php` to a
   versioned binary such as `/usr/local/php83/bin/php` (or `php82`, `php84`, ...).
@@ -133,7 +133,7 @@ with your host's tools first.
   config then goes to `~/yourls-config/<slug>.php` and backups to
   `~/yourls-backups/<slug>/`, both outside the web root.
 - **Database host:** use the MySQL hostname you created in the panel (e.g.
-  `mysql.example.com`), e.g. `ym server-config prod --db-host mysql.example.com`.
+  `mysql.example.com`), e.g. `ym target config prod --db-host mysql.example.com`.
 
 ### Store the site on GitHub
 
@@ -264,10 +264,10 @@ one it exits with code 2). It:
    where to put the site repo;
 2. runs `ym new` (the template asks its questions; when adopting it passes
    `--data include_example_plugins=false`);
-3. checks SSH key login to the `prod` target and, if it fails, offers `ym ssh-setup prod`;
+3. checks SSH key login to the `prod` target and, if it fails, offers `ym target login prod`;
 4. when adopting, asks for the source (the `prod` target if one is configured, or a local
    path) and runs `ym adopt`;
-5. offers `ym server-config prod` (with `--from-existing` when adopting and the server-local
+5. offers `ym target config prod` (with `--from-existing` when adopting and the server-local
    config doesn't exist yet);
 6. offers `ym deploy prod --dry-run`;
 7. prints a summary of what it did and what's left to do.
@@ -295,10 +295,10 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 | Command | What it does |
 |---|---|
 | `ym setup [DIR]` | Interactive wizard for a new site or an adoption; resumable (see [Setup wizard](#setup-wizard)). |
-| `ym ssh-setup TARGET [--key PATH]` | Check non-interactive SSH key login to the target. If it fails: create a key with `ssh-keygen` (default `~/.ssh/id_ed25519`) when there is none, install it with `ssh-copy-id` (asks for the SSH password once and to trust the host key; falls back to plain `ssh` where `ssh-copy-id` is missing), then check again. Explains the fix when a passphrase-protected key isn't in an agent (`ssh-add`) or a non-default key needs an `~/.ssh/config` entry. For `sftp` targets the check is an SFTP login (SFTP-only accounts have no shell), unknown host keys are shown with their SHA256 fingerprint for you to trust, and the key is appended to `.ssh/authorized_keys` over SFTP after one password login (`.ssh` 700, file 600). |
+| `ym target login TARGET [--key PATH]` | Check that ym can log in to the target without prompts (formerly `ym ssh-setup`). rsync targets need SSH key login. If it fails: create a key with `ssh-keygen` (default `~/.ssh/id_ed25519`) when there is none, install it with `ssh-copy-id` (asks for the SSH password once and to trust the host key; falls back to plain `ssh` where `ssh-copy-id` is missing), then check again. Explains the fix when a passphrase-protected key isn't in an agent (`ssh-add`) or a non-default key needs an `~/.ssh/config` entry. For `sftp` targets the check is an SFTP login (SFTP-only accounts have no shell); a password in `YM_<TARGET>_PASSWORD` also works there, so the key is optional. Unknown host keys are shown with their SHA256 fingerprint for you to trust, and the key is appended to `.ssh/authorized_keys` over SFTP after one password login (`.ssh` 700, file 600). |
 | `ym new [DEST] [--template SRC] [--vcs-ref REF] [--data K=V ...] [--defaults] [--no-vendor] [--no-git]` | Create a site repo from the template. The default template is `gh:RubenFixit/yourls-site-template`; override it with `--template` or the `YM_TEMPLATE` environment variable. Copier asks its questions unless you pass `--defaults`. Then `ym new` runs `ym core` + `ym sync` (skip with `--no-vendor`), runs `git init -b main` and makes the first commit (skip with `--no-git`; skipped with a warning if no Git identity is set), and tries `uv lock`. Refuses a non-empty `DEST`. |
 | `ym template-update [--vcs-ref REF] [--manager-version vX.Y.Z] [--defaults]` | Run `copier update` in the site repo. Refuses if the Git tree is dirty. `--manager-version` also bumps the yourls-manager pin. Then it tries `uv lock` and prints `git diff --stat` for you to review and commit. |
-| `ym server-config TARGET [--force] [--from-existing] [--db-host H] [--db-name N] [--db-user U] [--db-prefix P] [--admin-user U]` | Create the server-local config at the target's `config_file` from `server/config.example.php`. It fills in the DB settings, `YOURLS_SITE`, a fresh `YOURLS_COOKIEKEY` and one admin user. Passwords come from `YM_DB_PASSWORD` / `YM_ADMIN_PASSWORD` or a prompt, never from the command line. The admin password is hashed by the target's PHP (for `sftp` targets: locally with bcrypt, cost 10, in the same `phpass:` format). The file is written with mode 0600. It won't overwrite an existing file unless you pass `--force`, which first keeps a copy as `<file>.bak-<UTC timestamp>`. `--from-existing` copies the live install's `user/config.php` (or `includes/config.php`) to `config_file` instead; use it when adopting. |
+| `ym target config TARGET [--force] [--from-existing] [--db-host H] [--db-name N] [--db-user U] [--db-prefix P] [--admin-user U]` | Create the server-local config at the target's `config_file` from `server/config.example.php`. It fills in the DB settings, `YOURLS_SITE`, a fresh `YOURLS_COOKIEKEY` and one admin user. Passwords come from `YM_DB_PASSWORD` / `YM_ADMIN_PASSWORD` or a prompt, never from the command line. The admin password is hashed by the target's PHP (for `sftp` targets: locally with bcrypt, cost 10, in the same `phpass:` format). The file is written with mode 0600. It won't overwrite an existing file unless you pass `--force`, which first keeps a copy as `<file>.bak-<UTC timestamp>`. `--from-existing` copies the live install's `user/config.php` (or `includes/config.php`) to `config_file` instead; use it when adopting. |
 | `ym adopt (--from-target TARGET \| --from-dir PATH) [--ignore GLOB ...] [--active A,B,...] [--dry-run]` | Bring an existing YOURLS install under management, inside a repo made by `ym new`. `--active` names the plugins that are active on the install (needed for `sftp` targets; also skips reading them with the PHP helper elsewhere). See [below](#ym-adopt). |
 
 ### Day-to-day
@@ -385,7 +385,7 @@ the same commands run on the local machine. Each step:
 1. **build** (skipped with `--no-build`)
 2. **preflight**: ssh works with key auth (`BatchMode`), PHP CLI is ≥ 8.1, rsync is present,
    and `config_file` exists. If the config file is missing, `ym` points you to
-   `ym server-config` and exits with code 2.
+   `ym target config` and exits with code 2.
 3. **upload helper**: `ym-helper.php` goes to `~/.yourls-manager/ym-helper-<version>.php`,
    outside the web root.
 4. **backup**: `mysqldump --single-transaction | gzip` into `backup_dir`, keeping the newest
@@ -428,7 +428,7 @@ accounts work.
 `IdentityFile`) unless the target sets them. ym tries ssh-agent, then your key files, then a
 password: from `YM_<TARGET>_PASSWORD` (target name upper-cased, other characters as `_`, e.g.
 `YM_PROD_PASSWORD`) or, on a terminal, one prompt per command. ym never stores passwords.
-`ym ssh-setup prod` installs a key over SFTP so you don't need the password afterwards.
+`ym target login prod` installs a key over SFTP so you don't need the password afterwards.
 
 **Host keys** are checked against `~/.ssh/known_hosts`. On a terminal, ym shows an unknown
 host's SHA256 fingerprint and asks before adding it; without a terminal (CI) it fails and
@@ -438,7 +438,7 @@ fingerprint). A changed host key always fails.
 **What a deploy does.**
 
 1. **build** (skipped with `--no-build`), connect, **preflight**: the web root is reachable
-   (created if missing) and `config_file` exists (else: run `ym server-config prod`).
+   (created if missing) and `config_file` exists (else: run `ym target config prod`).
 2. **plan**: ym compares `dist/` with `<state_dir>/manifest.json`, the list of files (with
    sha256 and size) it deployed last time. New and changed files are uploaded; files in the
    manifest that are no longer in `dist/` are deleted, unless `protect`ed.
@@ -543,7 +543,7 @@ unless you list them by exact name.
 | `yourls/`, `yourls.lock.json` | `ym` | `ym core`, `ym sync`, `ym adopt` only. Never edit by hand; `ym status` shows drift. |
 | `overlay/` | you (some files come from the template) | You, `ym adopt`, and `ym template-update` for the template's files. To patch a vendored plugin, put the changed files in `overlay/user/plugins/<name>/`. |
 | `site.toml`, `tests/redirects.toml` | you | You (`ym core` and `ym adopt` update `[core].version` and append plugins, keeping your comments). |
-| Server-local config | the server | `ym server-config`. It's never in Git. |
+| Server-local config | the server | `ym target config`. It's never in Git. |
 
 The server-local config holds the DB credentials, cookie key and users. By default it lives
 at `<parent of web root>/yourls-config/<slug>.php`. The `overlay/user/config.php` shim
@@ -557,7 +557,7 @@ loads it. When `ym` runs the helper, it sets `YOURLS_CONFIG_FILE` to the target'
 YOURLS normally rewrites plaintext passwords in its config file into hashes. Here,
 YOURLS's config file is the shim, and the shim must never be modified on the server. So the
 shim sets `YOURLS_NO_HASH_PASSWORD`, and a plaintext password would stay plaintext. Instead,
-`ym server-config` writes the YOURLS hash format directly (`phpass:` + `password_hash()` with
+`ym target config` writes the YOURLS hash format directly (`phpass:` + `password_hash()` with
 `$` written as `!`), using the target's own PHP. To add users by hand, see the comment in
 `server/config.example.php`.
 

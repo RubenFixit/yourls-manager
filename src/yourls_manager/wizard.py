@@ -1,7 +1,7 @@
 """`ym setup`: interactive onboarding wizard (design §9).
 
-The wizard only orchestrates the non-interactive commands (``ym new``, ``ym ssh-setup``,
-``ym adopt``, ``ym server-config``, ``ym deploy --dry-run``), printing each equivalent
+The wizard only orchestrates the non-interactive commands (``ym new``, ``ym target login``,
+``ym adopt``, ``ym target config``, ``ym deploy --dry-run``), printing each equivalent
 command before running it. ``run_wizard`` is pure apart from its injected callables, so
 tests drive it with scripted answers.
 
@@ -183,9 +183,9 @@ def default_config_exists(site: Path, target: str) -> bool:
 def default_ssh_ok(site: Path, target: str) -> bool:
     """Login works non-interactively (sftp targets: an SFTP session; a password from
     ``YM_<TARGET>_PASSWORD`` counts)."""
-    from .sshsetup import check_ssh
+    from .login import check_login
 
-    return check_ssh(load_site(site).target(target), password=True).ok
+    return check_login(load_site(site).target(target), password=True).ok
 
 
 def _cmd(argv: Sequence[str]) -> str:
@@ -299,7 +299,7 @@ def run_wizard(
 
     # ---- ssh key authentication
     if remote_prod and not ssh_ok(dest, TARGET):
-        ssh_argv = [*site, "ssh-setup", TARGET]
+        ssh_argv = [*site, "target", "login", TARGET]
         console.info("")
         if cfg.targets[TARGET].is_sftp:
             from .transport.sftp import password_env
@@ -365,7 +365,7 @@ def run_wizard(
         return _summary(res)
 
     # ---- server-local config
-    sc_argv = [*site, "server-config", TARGET]
+    sc_argv = [*site, "target", "config", TARGET]
     if adopting:
         sc_argv.append("--from-existing")
     try:

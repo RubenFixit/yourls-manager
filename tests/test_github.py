@@ -140,10 +140,10 @@ def site(tmp_path, monkeypatch):
 @pytest.fixture
 def remote(monkeypatch):
     """Record key installs instead of touching a server."""
-    import yourls_manager.sshsetup as sshsetup
+    import yourls_manager.login as login
 
     installed: list[tuple[str, str]] = []
-    monkeypatch.setattr(sshsetup, "check_ssh", lambda spec, *a, **k: sshsetup.SshCheck(True, "ok"))
+    monkeypatch.setattr(login, "check_login", lambda spec, *a, **k: login.LoginCheck(True, "ok"))
     monkeypatch.setattr(ci, "install_public_key",
                         lambda spec, pub: installed.append((spec.name, pub)))  # fmt: skip
     monkeypatch.setattr(ci, "check_key", lambda spec, key: None)
@@ -236,7 +236,7 @@ def test_ci_setup_dry_run_and_unknown_host(site, fake_gh, remote, monkeypatch, c
     assert main([*S, "ci", "setup"]) == 2
     err = capsys.readouterr()
     assert "skipping target(s) box, dev" in err.out and "SHA256:" in err.out
-    assert "ym ssh-setup staging" in err.err
+    assert "ym target login staging" in err.err
     assert fake_gh.load()["envs"] == {}  # nothing changed, prod included
     assert "ci = true" not in (site / "site.toml").read_text()
 

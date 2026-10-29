@@ -1,4 +1,4 @@
-"""`ym ssh-setup` and ssh failure hints."""
+"""`ym target login` and ssh failure hints."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ import subprocess
 import pytest
 
 from yourls_manager.config import TargetSpec
+from yourls_manager.login import LoginCheck, classify, login
 from yourls_manager.remote import SshRunner
-from yourls_manager.sshsetup import SshCheck, classify, ssh_setup
 from yourls_manager.util import YMError
 
 SPEC = TargetSpec(name="prod", type="rsync", path="site", host="h.example", user="u", port=2222)
@@ -30,7 +30,7 @@ def test_classify(stderr, reason):
 
 
 class Checks:
-    def __init__(self, *results: SshCheck):
+    def __init__(self, *results: LoginCheck):
         self.results = list(results)
 
     def __call__(self, spec, identity=None):
@@ -39,8 +39,8 @@ class Checks:
 
 def test_already_working_does_nothing():
     calls = []
-    ok = ssh_setup(
-        SPEC, confirm=lambda q: True, interactive=calls.append, check=Checks(SshCheck(True, "ok"))
+    ok = login(
+        SPEC, confirm=lambda q: True, interactive=calls.append, check=Checks(LoginCheck(True, "ok"))
     )
     assert ok and calls == []
 
@@ -57,12 +57,12 @@ def test_creates_and_installs_key(tmp_path, monkeypatch):
         return 0
 
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/" + name)
-    ok = ssh_setup(
+    ok = login(
         SPEC,
         confirm=lambda q: True,
         interactive=interactive,
         key=key,
-        check=Checks(SshCheck(False, "auth", "denied"), SshCheck(True, "ok")),
+        check=Checks(LoginCheck(False, "auth", "denied"), LoginCheck(True, "ok")),
     )
     assert ok
     assert calls[0][:3] == ["ssh-keygen", "-t", "ed25519"]
@@ -75,12 +75,12 @@ def test_fallback_without_ssh_copy_id(tmp_path, monkeypatch):
     (tmp_path / "k.pub").write_text("ssh-ed25519 AAAA it's")
     calls: list[list[str]] = []
     monkeypatch.setattr("shutil.which", lambda name: None)
-    ok = ssh_setup(
+    ok = login(
         SPEC,
         confirm=lambda q: True,
         interactive=lambda a: calls.append(a) or 0,
         key=key,
-        check=Checks(SshCheck(False, "hostkey"), SshCheck(True, "ok")),
+        check=Checks(LoginCheck(False, "hostkey"), LoginCheck(True, "ok")),
     )
     assert ok and calls[0][:4] == ["ssh", "-p", "2222", "u@h.example"]
     script = calls[0][4]
@@ -90,23 +90,23 @@ def test_fallback_without_ssh_copy_id(tmp_path, monkeypatch):
 
 
 def test_declined_prints_manual_steps(tmp_path, capsys):
-    ok = ssh_setup(
+    ok = login(
         SPEC,
         confirm=lambda q: False,
         interactive=lambda a: 0,
         key=tmp_path / "none",
-        check=Checks(SshCheck(False, "auth")),
+        check=Checks(LoginCheck(False, "auth")),
     )
     assert not ok and "ssh-copy-id" in capsys.readouterr().out
 
 
 def test_network_error_raises():
     with pytest.raises(YMError, match="cannot reach"):
-        ssh_setup(
+        login(
             SPEC,
             confirm=lambda q: True,
             interactive=lambda a: 0,
-            check=Checks(SshCheck(False, "network", "timed out")),
+            check=Checks(LoginCheck(False, "network", "timed out")),
         )
 
 
@@ -116,12 +116,14 @@ def test_still_failing_mentions_agent(tmp_path, monkeypatch):
     (tmp_path / "k.pub").write_text("ssh-ed25519 AAAA")
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/" + name)
     with pytest.raises(YMError, match="ssh-add"):
-        ssh_setup(
+        login(
             SPEC,
             confirm=lambda q: True,
             interactive=lambda a: 0,
             key=key,
-            check=Checks(SshCheck(False, "auth"), SshCheck(False, "auth"), SshCheck(False, "auth")),
+            check=Checks(
+                LoginCheck(False, "auth"), LoginCheck(False, "auth"), LoginCheck(False, "auth")
+            ),
         )
 
 
@@ -132,7 +134,7 @@ def test_runner_hint_on_permission_denied(monkeypatch):
         return subprocess.CompletedProcess([], 255, b"", b"u@h: Permission denied (publickey).")
 
     monkeypatch.setattr(r, "_exec", fake_exec)
-    with pytest.raises(YMError, match="ym ssh-setup <target>"):
+    with pytest.raises(YMError, match="ym target login <target>"):
         r.run(["true"])
 
 
@@ -141,6 +143,29 @@ def test_key_works_only_with_explicit_identity(tmp_path, monkeypatch):
     key.write_text("x")
     (tmp_path / "k.pub").write_text("ssh-ed25519 AAAA")
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/" + name)
-    checks = Checks(SshCheck(False, "auth"), SshCheck(False, "auth"), SshCheck(True, "ok"))
+    checks = Checks(LoginCheck(False, "auth"), LoginCheck(False, "auth"), LoginCheck(True, "ok"))
     with pytest.raises(YMError, match="IdentityFile"):
-        ssh_setup(SPEC, confirm=lambda q: True, interactive=lambda a: 0, key=key, check=checks)
+        login(SPEC, confirm=lambda q: True, interactive=lambda a: 0, key=key, check=checks)
+
+
+def test_sftp_password_login_makes_key_optional(monkeypatch, capsys):
+    spec = TargetSpec(name="prod", type="sftp", path="site", host="h.example", user="u")
+    monkeypatch.setenv("YM_PROD_PASSWORD", "secret")
+
+    class Probe:
+        login = "u@h.example"
+
+    def check(spec, identity=None, *, password=False):
+        return LoginCheck(True, "ok") if password else LoginCheck(False, "auth", "denied")
+
+    questions: list[str] = []
+    ok = login(
+        spec,
+        confirm=lambda q: questions.append(q) or False,
+        interactive=lambda a: pytest.fail("no key should be created"),
+        check=check,
+        transport=lambda *a, **k: Probe(),
+    )
+    assert ok is True
+    assert "password login works ($YM_PROD_PASSWORD)" in capsys.readouterr().out
+    assert questions == ["Set up an SSH key anyway, so no password is needed?"]

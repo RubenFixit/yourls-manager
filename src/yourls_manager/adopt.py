@@ -742,7 +742,7 @@ core files dropped by `[core].exclude`, *restored* = core files missing from the
 1. Review `{REVIEW_DIR}/` and merge anything needed into `overlay/` (then delete it).
 2. Check the `[[plugins]]` entries added to site.toml (and any `# TODO verify`).
 3. Commit: `git add -A && git commit -m "Adopt existing install"`.
-4. If the target has no server-local config yet: `ym server-config {tname} --from-existing`.
+4. If the target has no server-local config yet: `ym target config {tname} --from-existing`.
 5. `ym deploy {tname} --dry-run`, then `ym deploy {tname}`.
 6. Update: `ym core --version latest`, commit, `ym deploy {tname}`.
 
@@ -880,7 +880,7 @@ def adopt(
     console.info("Next steps:")
     console.info(f"  review {REVIEW_DIR}/ (merge into overlay/ by hand), then commit")
     console.info(
-        f"  ym server-config {tname} --from-existing   # if {tname} has no server-local config yet"
+        f"  ym target config {tname} --from-existing   # if {tname} has no server-local config yet"
     )
     console.info(f"  ym deploy {tname} --dry-run")
     console.info(f"  ym deploy {tname}")

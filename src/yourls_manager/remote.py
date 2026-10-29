@@ -166,11 +166,11 @@ class SshRunner(Runner):
         if "permission denied" in low:
             return (
                 "\nym needs SSH key authentication (it never prompts for passwords)."
-                " Set it up with: ym ssh-setup <target>"
+                " Set it up with: ym target login <target>"
             )
         if "host key verification failed" in low:
             return (
-                "\nThe server's host key is not trusted yet. Run `ym ssh-setup <target>`"
+                "\nThe server's host key is not trusted yet. Run `ym target login <target>`"
                 f" or connect once with `ssh -p {self.port} {self.destination}`."
             )
         return ""

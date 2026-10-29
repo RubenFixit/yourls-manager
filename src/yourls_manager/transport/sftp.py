@@ -165,7 +165,7 @@ class _HostKeyPolicy:
             raise SftpHostKeyError(
                 f"the SSH host key of {hostname} is not known yet ({what}).\n"
                 "Check the fingerprint with your host, then either run"
-                f" `ym ssh-setup {t.target_name or '<target>'}` in a terminal (it asks to trust"
+                f" `ym target login {t.target_name or '<target>'}` in a terminal (it asks to trust"
                 f" it), or add it to {t.known_hosts}:\n"
                 f"  ssh-keyscan -p {t.endpoint.port} {t.endpoint.host} >> {t.known_hosts}\n"
                 "In CI, write the known_hosts secret to that file before running ym."
@@ -352,7 +352,7 @@ class SftpTransport:
             client = self._try_connect(password, keys=True)
         except SftpAuthError:
             if password is not None or not (self.interactive and self.allow_password_prompt):
-                ways = [f"an SSH key (`ym ssh-setup {self.target_name or '<target>'}`)"]
+                ways = [f"an SSH key (`ym target login {self.target_name or '<target>'}`)"]
                 if self.password_env_name and password is None:
                     ways.append(f"the password in ${self.password_env_name}")
                 if password is None:

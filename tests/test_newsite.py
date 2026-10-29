@@ -104,7 +104,7 @@ def test_new_and_template_update(tmp_path, fake_github, no_uv_lock, capfd):
     dest = tmp_path / "go-example-com"
     assert main(new_site_args(dest, "yourls_version=1.0.0")) == 0
     out = capfd.readouterr().out
-    assert "ym server-config prod" in out and "ym deploy prod --dry-run" in out
+    assert "ym target config prod" in out and "ym deploy prod --dry-run" in out
 
     # rendered, vendored, locked
     cfg = tomllib.loads((dest / "site.toml").read_text())

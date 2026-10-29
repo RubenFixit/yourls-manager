@@ -1,4 +1,4 @@
-"""`ym ssh-setup`: make SSH key authentication to a target work.
+"""`ym target login` (formerly ``ym ssh-setup``): make ym's non-interactive login work.
 
 ym always runs ssh with ``BatchMode=yes`` (a deploy opens many connections; a password
 prompt in the middle of rsync would hang), so targets need key authentication. This
@@ -6,7 +6,8 @@ command checks it and, when it fails, walks through creating a key (``ssh-keygen
 installing it on the server (``ssh-copy-id``, which asks for the password once).
 
 SFTP targets (design §10.4) are checked with an SFTP connection instead of a shell command
-(SFTP-only accounts have no shell), and the key is installed by logging in with the
+(SFTP-only accounts have no shell). A password from ``YM_<TARGET>_PASSWORD`` is a valid
+login there, so a key is optional; when wanted, it is installed by logging in with the
 password over SFTP and appending it to ``.ssh/authorized_keys`` (``.ssh`` 700, file 600).
 """
 
@@ -36,21 +37,21 @@ Confirm = Callable[[str], bool]
 
 
 @dataclass(frozen=True)
-class SshCheck:
+class LoginCheck:
     ok: bool
     reason: str  # "ok" | "auth" | "hostkey" | "network" | "other"
     detail: str = ""
 
 
-def classify(returncode: int, stderr: str) -> SshCheck:
+def classify(returncode: int, stderr: str) -> LoginCheck:
     if returncode == 0:
-        return SshCheck(True, "ok")
+        return LoginCheck(True, "ok")
     err = stderr.strip()
     low = err.lower()
     if "host key verification failed" in low or "remote host identification has changed" in low:
-        return SshCheck(False, "hostkey", err)
+        return LoginCheck(False, "hostkey", err)
     if "permission denied" in low:
-        return SshCheck(False, "auth", err)
+        return LoginCheck(False, "auth", err)
     if any(
         s in low
         for s in (
@@ -62,13 +63,13 @@ def classify(returncode: int, stderr: str) -> SshCheck:
             "operation timed out",
         )
     ):
-        return SshCheck(False, "network", err)
-    return SshCheck(False, "other", err)
+        return LoginCheck(False, "network", err)
+    return LoginCheck(False, "other", err)
 
 
-def check_ssh(
+def check_login(
     spec: TargetSpec, identity: Path | None = None, *, password: bool = False
-) -> SshCheck:
+) -> LoginCheck:
     """Try a non-interactive connection the same way every other ym command does
     (optionally forcing one key with ``-i``). For sftp targets an SFTP session is opened;
     ``password=True`` also accepts a password from ``YM_<TARGET>_PASSWORD``."""
@@ -77,9 +78,9 @@ def check_ssh(
 
         kw: dict[str, Any] = {} if password else {"env": {}}
         reason, detail = check_sftp(spec, identity, **kw)
-        return SshCheck(reason == "ok", reason, detail)
+        return LoginCheck(reason == "ok", reason, detail)
     if spec.is_local:
-        return SshCheck(True, "ok")
+        return LoginCheck(True, "ok")
     assert spec.host is not None
     runner = SshRunner(spec.host, spec.user, spec.port)
     try:
@@ -112,13 +113,13 @@ def _terminal(argv: Sequence[str]) -> int:
         return 127
 
 
-def ssh_setup(
+def login(
     spec: TargetSpec,
     *,
     confirm: Confirm,
     interactive: Interactive = _terminal,
     key: Path | None = None,
-    check: Callable[..., SshCheck] = check_ssh,
+    check: Callable[..., LoginCheck] = check_login,
     transport: TransportFactory | None = None,
 ) -> bool:
     """Return True when key authentication to ``spec`` works afterwards."""
@@ -188,7 +189,7 @@ def ssh_setup(
         if check(spec, key).ok:
             raise YMError(
                 f"the key works with `ssh -i {key}`, but ssh does not use it by default.\n"
-                "Add this to ~/.ssh/config, then run `ym ssh-setup` again:\n"
+                "Add this to ~/.ssh/config, then run `ym target login` again:\n"
                 f"  Host {spec.host}\n    IdentityFile {key}"
             )
         raise YMError(
@@ -254,10 +255,10 @@ def sftp_setup(
     confirm: Confirm,
     interactive: Interactive = _terminal,
     key: Path | None = None,
-    check: Callable[..., SshCheck] = check_ssh,
+    check: Callable[..., LoginCheck] = check_login,
     transport: TransportFactory | None = None,
 ) -> bool:
-    """ssh-setup for sftp targets: everything happens over SFTP (no shell needed)."""
+    """`target login` for sftp targets: everything happens over SFTP (no shell needed)."""
     from .transport.sftp import SftpAuthError, SftpTransport, password_env
 
     factory: TransportFactory = transport or SftpTransport.for_target
@@ -291,6 +292,10 @@ def sftp_setup(
     key = key or default_key()
     pub = key.with_name(key.name + ".pub")
     env_name = password_env(spec.name)
+    if os.environ.get(env_name) and check(spec, password=True).ok:
+        console.info(f"  password login works (${env_name}); an SSH key is optional")
+        if not confirm("Set up an SSH key anyway, so no password is needed?"):
+            return True
     if not _ensure_key(key, confirm, interactive):
         _manual_help_sftp(login, pub, env_name)
         return False
@@ -310,7 +315,7 @@ def sftp_setup(
     if res.reason == "auth" and check(spec, key).ok:
         raise YMError(
             f"the key works when given explicitly, but ym does not use {key} by default.\n"
-            "Add this to ~/.ssh/config, then run `ym ssh-setup` again:\n"
+            "Add this to ~/.ssh/config, then run `ym target login` again:\n"
             f"  Host {spec.host}\n    IdentityFile {key}"
         )
     raise YMError(

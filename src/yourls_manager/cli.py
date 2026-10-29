@@ -299,12 +299,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     q.add_argument("targets", nargs="*", metavar="TARGET", help="default: targets with ci = true")
 
+    _target_parsers(sub, common)
     _onboarding_parsers(sub, common)
     return parser
 
 
 def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
-    """Design §9: new, template-update, server-config, adopt, setup."""
+    """Design §9: new, template-update, adopt, setup."""
     fmt = argparse.RawDescriptionHelpFormatter
     p = sub.add_parser(
         "new",
@@ -360,39 +361,6 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
     p.add_argument("--defaults", action="store_true", help="accept defaults for new questions")
 
     p = sub.add_parser(
-        "server-config",
-        parents=[common],
-        formatter_class=fmt,
-        help="create the server-local YOURLS config (secrets) on a target",
-        description=(
-            "Write the target's config_file (mode 0600) from server/config.example.php:\n"
-            "DB settings, YOURLS_SITE (the target's url), a fresh cookie key and one admin\n"
-            "user whose password is hashed by the target's PHP (sftp targets: locally with\n"
-            "bcrypt). With --from-existing, copy the existing install's user/config.php\n"
-            "instead (when adopting)."
-        ),
-        epilog=(
-            "secrets (never pass them as arguments):\n"
-            "  YM_DB_PASSWORD      database password (else prompted)\n"
-            "  YM_ADMIN_PASSWORD   admin password (else prompted twice)"
-        ),
-    )
-    p.add_argument("target")
-    p.add_argument(
-        "--force", action="store_true", help="replace an existing file (kept as .bak-<UTC>)"
-    )
-    p.add_argument(
-        "--from-existing",
-        action="store_true",
-        help="copy <web root>/user/config.php (or includes/config.php) to config_file",
-    )
-    p.add_argument("--db-host", metavar="H", help="YOURLS_DB_HOST (default: example's value)")
-    p.add_argument("--db-name", metavar="N", help="YOURLS_DB_NAME (prompted if omitted)")
-    p.add_argument("--db-user", metavar="U", help="YOURLS_DB_USER (prompted if omitted)")
-    p.add_argument("--db-prefix", metavar="P", help="YOURLS_DB_PREFIX (default: yourls_)")
-    p.add_argument("--admin-user", metavar="U", help="admin username (prompted if omitted)")
-
-    p = sub.add_parser(
         "adopt",
         parents=[common],
         formatter_class=fmt,
@@ -435,21 +403,81 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
     )
     p.add_argument("dir", nargs="?", type=Path, metavar="DIR", help="site repo to resume")
 
-    p = sub.add_parser(
-        "ssh-setup",
-        parents=[common],
-        help="check SSH key login to a target; create and install a key if needed",
-        description=(
-            "ym runs ssh non-interactively (BatchMode), so targets need key authentication."
-            " This checks it and otherwise runs ssh-keygen and ssh-copy-id for you"
-            " (asking for the SSH password once). For sftp targets the check is an SFTP"
-            " login and the key is appended to .ssh/authorized_keys over SFTP."
-        ),
-    )
+
+def _login_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("target")
     p.add_argument(
         "--key", type=Path, metavar="PATH", help="private key path (default: ~/.ssh/id_ed25519)"
     )
+
+
+def _config_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("target")
+    p.add_argument(
+        "--force", action="store_true", help="replace an existing file (kept as .bak-<UTC>)"
+    )
+    p.add_argument(
+        "--from-existing",
+        action="store_true",
+        help="copy <web root>/user/config.php (or includes/config.php) to config_file",
+    )
+    p.add_argument("--db-host", metavar="H", help="YOURLS_DB_HOST (default: example's value)")
+    p.add_argument("--db-name", metavar="N", help="YOURLS_DB_NAME (prompted if omitted)")
+    p.add_argument("--db-user", metavar="U", help="YOURLS_DB_USER (prompted if omitted)")
+    p.add_argument("--db-prefix", metavar="P", help="YOURLS_DB_PREFIX (default: yourls_)")
+    p.add_argument("--admin-user", metavar="U", help="admin username (prompted if omitted)")
+
+
+def _target_parsers(sub, common: argparse.ArgumentParser) -> None:
+    """``ym target …``: prepare the servers a site deploys to."""
+    fmt = argparse.RawDescriptionHelpFormatter
+    p = sub.add_parser(
+        "target",
+        parents=[common],
+        help="deploy targets: log in, write the server-local config",
+    )
+    tsub = p.add_subparsers(dest="target_cmd", metavar="ACTION", required=True)
+    q = tsub.add_parser(
+        "login",
+        parents=[common],
+        formatter_class=fmt,
+        help="check that ym can log in to a target; set up an SSH key if needed",
+        description=(
+            "ym logs in non-interactively, so a target needs a login that works without\n"
+            "prompts. rsync targets: SSH key authentication (BatchMode). If it fails, this\n"
+            "creates a key with ssh-keygen when there is none and installs it with\n"
+            "ssh-copy-id (asking for the SSH password once), then checks again.\n"
+            "sftp targets: the check is an SFTP login (SFTP-only accounts have no shell).\n"
+            "A key is optional there: a password in $YM_<TARGET>_PASSWORD works too. To\n"
+            "install a key, ym logs in with the password once and appends it to\n"
+            ".ssh/authorized_keys over SFTP."
+        ),
+    )
+    _login_args(q)
+    q = tsub.add_parser(
+        "config",
+        parents=[common],
+        formatter_class=fmt,
+        help="create the server-local YOURLS config (secrets) on a target",
+        description=(
+            "Write the target's config_file (mode 0600) from server/config.example.php:\n"
+            "DB settings, YOURLS_SITE (the target's url), a fresh cookie key and one admin\n"
+            "user whose password is hashed by the target's PHP (sftp targets: locally with\n"
+            "bcrypt). With --from-existing, copy the existing install's user/config.php\n"
+            "instead (when adopting)."
+        ),
+        epilog=(
+            "secrets (never pass them as arguments):\n"
+            "  YM_DB_PASSWORD      database password (else prompted)\n"
+            "  YM_ADMIN_PASSWORD   admin password (else prompted twice)"
+        ),
+    )
+    _config_args(q)
+
+    _deprecated(sub, common, "ssh-setup", "target login", _login_args,
+                command="target", target_cmd="login")  # fmt: skip
+    _deprecated(sub, common, "server-config", "target config", _config_args,
+                command="target", target_cmd="config")  # fmt: skip
 
 
 def _load(args: argparse.Namespace) -> SiteConfig:
@@ -491,25 +519,6 @@ def _dispatch(args: argparse.Namespace) -> int:
 
     if cmd == "setup":
         return _setup(args.dir)
-
-    if cmd == "ssh-setup":
-        from .sshsetup import ssh_setup
-
-        cfg = _load(args)
-        spec = cfg.target(args.target)
-        if not spec.is_local and not (sys.stdin.isatty() and sys.stdout.isatty()):
-            from .sshsetup import check_ssh
-
-            res = check_ssh(spec)
-            if res.ok:
-                console.info("key authentication works")
-                return EXIT_OK
-            raise UsageError(
-                "`ym ssh-setup` needs a terminal to create or install a key"
-                + (f"\n{res.detail}" if spec.is_sftp and res.detail else "")
-            )
-        ok = ssh_setup(spec, confirm=_confirm, key=args.key)
-        return EXIT_OK if ok else EXIT_ERROR
 
     if cmd == "verify":
         from .verify import verify
@@ -687,7 +696,42 @@ def _dispatch(args: argparse.Namespace) -> int:
         )
         return EXIT_OK
 
-    if cmd == "server-config":
+    if cmd == "target":
+        return _target(cfg, args)
+
+    if cmd == "adopt":
+        from .adopt import adopt
+
+        adopt(
+            cfg,
+            from_target=args.from_target,
+            from_dir=args.from_dir,
+            ignore=args.ignore,
+            dry_run=args.dry_run,
+            active=None if args.active is None else args.active.split(","),
+        )
+        return EXIT_OK
+
+    raise YMError(f"unknown command {cmd}")  # pragma: no cover
+
+
+def _target(cfg: SiteConfig, args: argparse.Namespace) -> int:
+    if args.target_cmd == "login":
+        from .login import check_login, login
+
+        spec = cfg.target(args.target)
+        if not spec.is_local and not (sys.stdin.isatty() and sys.stdout.isatty()):
+            res = check_login(spec, password=True)
+            if res.ok:
+                console.info("login works" if spec.is_sftp else "key authentication works")
+                return EXIT_OK
+            raise UsageError(
+                "`ym target login` needs a terminal to create or install a key"
+                + (f"\n{res.detail}" if spec.is_sftp and res.detail else "")
+            )
+        return EXIT_OK if login(spec, confirm=_confirm, key=args.key) else EXIT_ERROR
+
+    if args.target_cmd == "config":
         from .serverconfig import ServerConfigOptions, server_config
 
         server_config(
@@ -705,20 +749,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         )
         return EXIT_OK
 
-    if cmd == "adopt":
-        from .adopt import adopt
-
-        adopt(
-            cfg,
-            from_target=args.from_target,
-            from_dir=args.from_dir,
-            ignore=args.ignore,
-            dry_run=args.dry_run,
-            active=None if args.active is None else args.active.split(","),
-        )
-        return EXIT_OK
-
-    raise YMError(f"unknown command {cmd}")  # pragma: no cover
+    raise YMError(f"unknown target action {args.target_cmd}")  # pragma: no cover
 
 
 def _confirm(question: str) -> bool:
@@ -748,7 +779,7 @@ def _setup(start: Path | None = None) -> int:
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         raise UsageError(
             "`ym setup` is interactive and needs a terminal; use `ym new`, `ym adopt`,"
-            " `ym server-config` and `ym deploy` directly"
+            " `ym target config` and `ym deploy` directly"
         )
 
     def ask(question: str, default: str | None) -> str:

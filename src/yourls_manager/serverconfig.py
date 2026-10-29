@@ -1,4 +1,4 @@
-"""`ym server-config` (design §9): create the server-local YOURLS config on a target.
+"""`ym target config` (design §9): create the server-local YOURLS config on a target.
 
 Secrets (DB password, admin password) are read from the environment or prompted with
 ``getpass``; they never appear in argv or logs. The admin password is stored in the format
@@ -255,7 +255,7 @@ def bcrypt_phpass(password: str, *, rounds: int = BCRYPT_COST) -> str:
 
 
 class _RunnerFiles:
-    """server-config's file access through a shell runner (rsync targets)."""
+    """target config's file access through a shell runner (rsync targets)."""
 
     def __init__(self, runner: Runner):
         self.runner = runner
@@ -285,7 +285,7 @@ class _RunnerFiles:
 
 
 class _SftpFiles:
-    """server-config's file access over SFTP (sftp targets)."""
+    """target config's file access over SFTP (sftp targets)."""
 
     def __init__(self, transport: SftpTransport):
         self.t = transport
@@ -379,7 +379,7 @@ def _server_config(
 ) -> str:
     target_name = spec.name
     path = files.abspath(spec.config_file)
-    console.step(f"server-config {target_name} ({files.describe()}:{path})")
+    console.step(f"target config {target_name} ({files.describe()}:{path})")
 
     if opts.from_existing:
         flags = [opts.db_host, opts.db_name, opts.db_user, opts.db_prefix, opts.admin_user]
@@ -397,7 +397,7 @@ def _server_config(
         if is_shim(text):
             raise UsageError(
                 f"{source} is already the yourls-manager config shim, not a real config;"
-                f" create {path} with `ym server-config {target_name}` instead"
+                f" create {path} with `ym target config {target_name}` instead"
             )
         if "YOURLS_DB_" not in text:
             raise UsageError(f"{source} does not look like a YOURLS config (no YOURLS_DB_*)")

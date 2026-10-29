@@ -1,4 +1,4 @@
-"""`ym server-config` (design §9)."""
+"""`ym target config` (design §9)."""
 
 from __future__ import annotations
 
@@ -182,7 +182,7 @@ def test_server_config_fresh(tmp_path, monkeypatch, capfd):
     monkeypatch.setenv("YM_DB_PASSWORD", SECRET_DB)
     monkeypatch.setenv("YM_ADMIN_PASSWORD", SECRET_ADMIN)
     S = ["--site-dir", str(site), "-v"]
-    argv = [*S, "server-config", "local", "--db-name", "yourls", "--db-user", "yu"]
+    argv = [*S, "target", "config", "local", "--db-name", "yourls", "--db-user", "yu"]
     argv += ["--admin-user", "ruben", "--db-host", "127.0.0.1:3306"]
     assert main(argv) == 0
     out, err = capfd.readouterr()
@@ -212,9 +212,19 @@ def test_server_config_fresh(tmp_path, monkeypatch, capfd):
 def test_server_config_requires_values_non_interactive(tmp_path, monkeypatch, capsys):
     site, _ = make_site(tmp_path)
     monkeypatch.delenv("YM_DB_PASSWORD", raising=False)
-    assert main(["--site-dir", str(site), "server-config", "local"]) == 2
+    assert main(["--site-dir", str(site), "target", "config", "local"]) == 2
     assert "--db-name" in capsys.readouterr().err
-    argv = ["--site-dir", str(site), "server-config", "local", "--db-name", "n", "--db-user", "u"]
+    argv = [
+        "--site-dir",
+        str(site),
+        "target",
+        "config",
+        "local",
+        "--db-name",
+        "n",
+        "--db-user",
+        "u",
+    ]
     assert main([*argv, "--admin-user", "a"]) == 2
     assert "YM_DB_PASSWORD" in capsys.readouterr().err
 
@@ -253,7 +263,7 @@ def test_server_config_hash_failure(tmp_path, monkeypatch, capsys):
     site, _ = make_site(tmp_path, php="/nonexistent/php")
     monkeypatch.setenv("YM_DB_PASSWORD", "x")
     monkeypatch.setenv("YM_ADMIN_PASSWORD", "y")
-    argv = ["--site-dir", str(site), "server-config", "local", "--db-name", "n"]
+    argv = ["--site-dir", str(site), "target", "config", "local", "--db-name", "n"]
     assert main([*argv, "--db-user", "u", "--admin-user", "a"]) == 1
     assert "could not hash" in capsys.readouterr().err
 
@@ -268,7 +278,7 @@ $yourls_user_passwords = [ 'bob' => 'plain', 'amy' => 'phpass:!2y!10!x' ];
 
 def test_server_config_from_existing(tmp_path, capsys):
     site, web = make_site(tmp_path)
-    S = ["--site-dir", str(site), "server-config", "local", "--from-existing"]
+    S = ["--site-dir", str(site), "target", "config", "local", "--from-existing"]
     assert main(S) == 2
     assert "no existing YOURLS config" in capsys.readouterr().err
     write_files(web / "site", {"user/config.php": REAL_CONFIG})

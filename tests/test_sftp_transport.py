@@ -188,7 +188,7 @@ def test_unknown_host_key(sftp_only, ssh_home, tmp_path):
     blob = base64.b64decode(host_public_key().split()[1])
     fp = "SHA256:" + base64.b64encode(hashlib.sha256(blob).digest()).decode().rstrip("=")
     assert "not known yet" in msg and fp in msg and "ssh-keyscan -p" in msg
-    assert "ym ssh-setup prod" in msg and not kh.exists()
+    assert "ym target login prod" in msg and not kh.exists()
 
     # declined on a terminal: nothing written
     t = transport(sftp_only, ssh_home, env=env, known_hosts=kh, interactive=True,

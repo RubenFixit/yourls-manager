@@ -160,20 +160,20 @@ def check_site(rep: Report, start: Path | None) -> SiteConfig | None:
 
 
 def _login(rep: Report, spec: TargetSpec) -> bool:
-    from .sshsetup import check_ssh
+    from .login import check_login
 
     if spec.is_local and not spec.is_sftp:
         rep.add(OK, "login", "local target (no host)")
         return True
     try:
-        res = check_ssh(spec, password=True)
+        res = check_login(spec, password=True)
     except YMError as exc:
         rep.add(FAIL, "login", str(exc))
         return False
     if res.ok:
         rep.add(OK, "login", "key authentication works" if not spec.is_sftp else "SFTP login works")
         return True
-    hint = f"ym ssh-setup {spec.name}"
+    hint = f"ym target login {spec.name}"
     if spec.is_sftp and res.reason == "auth":
         from .transport.sftp import password_env
 
@@ -202,7 +202,7 @@ def _rsync_checks(rep: Report, cfg: SiteConfig, spec: TargetSpec) -> dict | None
         rep.add(OK, "server config", t.config_file)
     else:
         rep.add(FAIL, "server config", f"{t.config_file} not found",
-                f"ym server-config {spec.name}")  # fmt: skip
+                f"ym target config {spec.name}")  # fmt: skip
     proc = t.runner.run(["cat", "--", t.release_file], check=False)
     return _parse_release(proc.stdout) if proc.returncode == 0 else None
 
@@ -218,7 +218,7 @@ def _sftp_checks(rep: Report, cfg: SiteConfig, spec: TargetSpec) -> dict | None:
                 rep.add(OK, "server config", t.config_file)
             else:
                 rep.add(FAIL, "server config", f"{t.config_file} not found",
-                        f"ym server-config {spec.name}")  # fmt: skip
+                        f"ym target config {spec.name}")  # fmt: skip
             if not t.transport.is_file(t.release_file):
                 return None
             return _parse_release(t.transport.read_bytes(t.release_file))

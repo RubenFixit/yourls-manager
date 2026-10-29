@@ -1,4 +1,4 @@
-"""server-config, ssh-setup and the wizard for sftp targets (design §10.4, §10.5)."""
+"""target config, target login and the wizard for sftp targets (design §10.4, §10.5)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import pytest
 from yourls_manager import serverconfig as sc
 from yourls_manager.cli import main
 from yourls_manager.config import load_site
-from yourls_manager.sshsetup import check_ssh, install_key_sftp, ssh_setup
+from yourls_manager.login import check_login, install_key_sftp, login
 from yourls_manager.transport.sftp import SftpTransport
 from yourls_manager.wizard import run_wizard
 
@@ -79,7 +79,7 @@ def test_bcrypt_hash_verifies_with_yourls(tmp_path, monkeypatch):
     assert not yourls_password_ok(cfg, "ruben", SECRET_ADMIN + "!")
 
 
-# --------------------------------------------------------------------------- server-config
+# --------------------------------------------------------------------------- target config
 
 
 def sc_site(tmp_path: Path, account) -> Path:
@@ -112,7 +112,7 @@ def test_server_config_over_sftp(tmp_path, account, ssh_home, monkeypatch, capsy
     monkeypatch.setenv("YM_ADMIN_PASSWORD", SECRET_ADMIN)
     site = sc_site(tmp_path, account)
     S = ["--site-dir", str(site), "-v"]
-    argv = [*S, "server-config", "prod", "--db-name", "yourls", "--db-user", "yu"]
+    argv = [*S, "target", "config", "prod", "--db-name", "yourls", "--db-user", "yu"]
     argv += ["--admin-user", "ruben"]
     assert main(argv) == 0
     out, err = capsys.readouterr()
@@ -145,7 +145,7 @@ def test_server_config_from_existing_over_sftp(tmp_path, sftp_only, ssh_home, mo
                                                capsys):  # fmt: skip
     monkeypatch.setenv("YM_PROD_PASSWORD", sftp_only.password)
     site = sc_site(tmp_path, sftp_only)
-    S = ["--site-dir", str(site), "server-config", "prod", "--from-existing"]
+    S = ["--site-dir", str(site), "target", "config", "prod", "--from-existing"]
     assert main(S) == 2
     assert "no existing YOURLS config" in capsys.readouterr().err
     real = "<?php\ndefine( 'YOURLS_DB_USER', 'u' );\n$yourls_user_passwords = [ 'bob' => 'pw' ];\n"
@@ -163,7 +163,7 @@ def test_server_config_from_existing_over_sftp(tmp_path, sftp_only, ssh_home, mo
     assert "shim" in capsys.readouterr().err
 
 
-# --------------------------------------------------------------------------- ssh-setup
+# --------------------------------------------------------------------------- target login
 
 
 def _keygen(argv) -> int:
@@ -181,14 +181,14 @@ def test_ssh_setup_installs_key_over_sftp(tmp_path, sftp_only, ssh_home, monkeyp
     monkeypatch.setenv("YM_PROD_PASSWORD", sftp_only.password)
     site = sc_site(tmp_path, sftp_only)
     spec = load_site(site).target("prod")
-    assert check_ssh(spec).reason == "hostkey"
+    assert check_login(spec).reason == "hostkey"
     questions: list[str] = []
 
     def confirm(q: str) -> bool:
         questions.append(q)
         return True
 
-    assert ssh_setup(spec, confirm=confirm, interactive=_keygen) is True
+    assert login(spec, confirm=confirm, interactive=_keygen) is True
     assert any("Trust this host key" in q for q in questions)
     assert any("Create one now" in q for q in questions)
     assert any("over SFTP" in q for q in questions)
@@ -199,7 +199,7 @@ def test_ssh_setup_installs_key_over_sftp(tmp_path, sftp_only, ssh_home, monkeyp
     assert ak.read_text() == pub + "\n"
     assert stat.S_IMODE(ak.stat().st_mode) == 0o600
     assert stat.S_IMODE(ak.parent.stat().st_mode) == 0o700
-    assert check_ssh(spec).ok  # key login, no password involved
+    assert check_login(spec).ok  # key login, no password involved
 
     # idempotent; non-TTY CLI check succeeds with the key alone
     monkeypatch.delenv("YM_PROD_PASSWORD")
@@ -207,7 +207,7 @@ def test_ssh_setup_installs_key_over_sftp(tmp_path, sftp_only, ssh_home, monkeyp
         assert install_key_sftp(t, pub) is False
     assert ak.read_text() == pub + "\n"
     capsys.readouterr()
-    assert main(["--site-dir", str(site), "ssh-setup", "prod"]) == 0
+    assert main(["--site-dir", str(site), "target", "login", "prod"]) == 0
     assert "key authentication works" in capsys.readouterr().out
 
 
@@ -216,11 +216,11 @@ def test_ssh_setup_installs_key_over_sftp(tmp_path, sftp_only, ssh_home, monkeyp
 def test_ssh_setup_sftp_declined_and_non_tty(tmp_path, account, ssh_home, capsys):
     site = sc_site(tmp_path, account)
     spec = load_site(site).target("prod")
-    assert check_ssh(spec).reason == "auth"
-    assert ssh_setup(spec, confirm=lambda q: False, interactive=_keygen) is False
+    assert check_login(spec).reason == "auth"
+    assert login(spec, confirm=lambda q: False, interactive=_keygen) is False
     out = capsys.readouterr().out
     assert "authorized_keys" in out and "YM_PROD_PASSWORD" in out
-    assert main(["--site-dir", str(site), "ssh-setup", "prod"]) == 2
+    assert main(["--site-dir", str(site), "target", "login", "prod"]) == 2
     assert "needs a terminal" in capsys.readouterr().err
 
 
@@ -280,7 +280,7 @@ def test_wizard_ssh_message_for_sftp(tmp_path, capsys):
     res = run_wizard(Script(["new", "s", "n"]), invoke=ym, ssh_ok=lambda s, t: False,
                      cwd=tmp_path, home=tmp_path / "st")  # fmt: skip
     assert "YM_PROD_PASSWORD" in capsys.readouterr().out
-    assert res.resumable and any("ssh-setup prod" in r for r in res.remaining)
+    assert res.resumable and any("target login prod" in r for r in res.remaining)
 
 
 # --------------------------------------------------------------------------- template

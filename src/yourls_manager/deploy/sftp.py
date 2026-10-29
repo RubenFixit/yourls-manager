@@ -240,8 +240,8 @@ class SftpTarget(Target):
         if not t.is_file(self.config_file):
             raise UsageError(
                 f"server-local config not found: {self.config_file} on {t.describe()}\n"
-                f"Create it with `ym server-config {self.spec.name}` (or"
-                f" `ym server-config {self.spec.name} --from-existing` when adopting)."
+                f"Create it with `ym target config {self.spec.name}` (or"
+                f" `ym target config {self.spec.name} --from-existing` when adopting)."
             )
         console.info(f"  config {self.config_file}")
 

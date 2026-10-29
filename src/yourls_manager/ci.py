@@ -124,7 +124,7 @@ def host_keys(spec: TargetSpec, confirm: Confirm | None) -> list[str]:
     if confirm is None:
         raise UsageError(
             f"can't confirm the host key fingerprints without a terminal; connect once with"
-            f" `ym ssh-setup {spec.name}` (it records the host key), then run this again"
+            f" `ym target login {spec.name}` (it records the host key), then run this again"
         )
     if not confirm("Do these fingerprints match the server's (ask your host if unsure)?"):
         raise UsageError("host key not confirmed; nothing stored")
@@ -154,7 +154,7 @@ def generate_key(directory: Path, comment: str) -> CiKey:
 def install_public_key(spec: TargetSpec, public_key: str) -> None:
     """Append the key to authorized_keys over the target's normal ym login."""
     if spec.is_sftp:
-        from .sshsetup import install_key_sftp
+        from .login import install_key_sftp
         from .transport.sftp import SftpTransport
 
         with SftpTransport.for_target(spec, interactive=False) as t:
@@ -183,8 +183,8 @@ def check_key(spec: TargetSpec, key: Path) -> None:
         except SftpError as exc:
             raise YMError(f"the new CI key was installed but doesn't log in: {exc}") from None
     else:
+        from .login import classify
         from .remote import SshRunner
-        from .sshsetup import classify
 
         runner = SshRunner(spec.host or "", spec.user, spec.port)
         argv = [*runner.ssh_base(), "-F", "/dev/null", "-o", "IdentitiesOnly=yes",
@@ -334,7 +334,7 @@ def ci_setup(
     confirm: Confirm | None = None,
     gh: Gh | None = None,
 ) -> None:
-    from .sshsetup import check_ssh
+    from .login import check_login
 
     gh = gh or Gh(cwd=cfg.root)
     plans = pick_targets(cfg, targets)
@@ -356,10 +356,10 @@ def ci_setup(
         new_key = rotate or KEY_SECRET not in have
         hosts = host_keys(spec, confirm)
         if new_key and not dry_run:
-            login = check_ssh(spec, password=True)
+            login = check_login(spec, password=True)
             if not login.ok:
                 raise YMError(f"can't log in to {spec.host} to install the CI key ({login.reason});"
-                              f" run `ym ssh-setup {spec.name}` first")  # fmt: skip
+                              f" run `ym target login {spec.name}` first")  # fmt: skip
         if dry_run:
             console.info(f"  would {'create' if not exists else 'use'} environment {env}")
             console.info(f"  would set {HOSTS_SECRET} ({len(hosts)} line(s))")

@@ -48,7 +48,8 @@ class FakeYm:
     def __call__(self, argv) -> int:
         argv = list(argv)
         self.calls.append(argv)
-        cmd = next(a for a in argv if not a.startswith("-") and not a.startswith("/"))
+        words = [a for a in argv if not a.startswith("-") and not a.startswith("/")]
+        cmd = " ".join(words[:2]) if words[0] == "target" else words[0]
         if cmd == self.fail:
             return 1
         if argv[0] == "new":
@@ -79,7 +80,7 @@ def test_new_site_flow(tmp_path, capsys):
     S = ["--site-dir", site]
     assert ym.calls == [
         ["new", site],
-        [*S, "server-config", "prod"],
+        [*S, "target", "config", "prod"],
         [*S, "deploy", "prod", "--dry-run"],
     ]
     assert res.exit_code == 0 and not ask.answers
@@ -97,7 +98,7 @@ def test_adopt_from_prod(tmp_path, capsys):
     assert ym.calls == [
         ["new", site, "--data", "include_example_plugins=false"],
         [*S, "adopt", "--from-target", "prod"],
-        [*S, "server-config", "prod", "--from-existing"],
+        [*S, "target", "config", "prod", "--from-existing"],
     ]
     assert "ruben@example.dreamhost.com:go.example.com" in ask.questions[2]
     remaining = "\n".join(res.remaining)
@@ -112,7 +113,7 @@ def test_adopt_local_dir_without_prod(tmp_path):
     res = run_wizard(ask, invoke=ym, cwd=tmp_path)
     site = str(tmp_path / "s")
     assert ym.calls[1] == ["--site-dir", site, "adopt", "--from-dir", str(install)]
-    assert len(ym.calls) == 2  # no prod target: server-config/deploy are left to do
+    assert len(ym.calls) == 2  # no prod target: target config/deploy are left to do
     assert any("[deploy.targets.prod]" in r for r in res.remaining)
 
 
@@ -127,7 +128,7 @@ def test_config_exists_skips_server_config(tmp_path):
     ym = FakeYm(prod=True)
     run_wizard(Script(["new", "s", "n"]), invoke=ym, config_exists=lambda s, t: True,
                cwd=tmp_path)  # fmt: skip
-    assert [c for c in ym.calls if "server-config" in c] == []
+    assert [c for c in ym.calls if "config" in c] == []
 
 
 def test_invalid_answers_reprompt(tmp_path):
@@ -150,11 +151,11 @@ def test_setup_requires_tty(capsys):
 
 
 @pytest.mark.parametrize(
-    "cmd", ["new", "template-update", "server-config", "adopt", "setup", "ssh-setup"]
+    "cmd", ["new", "template-update", "target config", "adopt", "setup", "target login"]
 )
 def test_help(cmd, capsys):
     with pytest.raises(SystemExit) as exc:
-        main([cmd, "--help"])
+        main([*cmd.split(), "--help"])
     assert exc.value.code == 0
     assert f"ym {cmd}" in capsys.readouterr().out
 
@@ -174,12 +175,12 @@ def test_adopt_failure_then_resume(tmp_path, capsys):
     ym2 = FakeYm(prod=True)
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
-    ask = Script(["", "y", "y", "n"])  # resume? adopt prod? server-config? dry run?
+    ask = Script(["", "y", "y", "n"])  # resume? adopt prod? target config? dry run?
     res = run_wizard(ask, invoke=ym2, config_exists=lambda s, t: False, cwd=elsewhere)
     S = ["--site-dir", str(site)]
     assert ym2.calls == [
         [*S, "adopt", "--from-target", "prod"],
-        [*S, "server-config", "prod", "--from-existing"],
+        [*S, "target", "config", "prod", "--from-existing"],
     ]
     assert res.exit_code == 0 and not ask.answers
     st = SetupState(site, tmp_path / "state")
@@ -188,7 +189,7 @@ def test_adopt_failure_then_resume(tmp_path, capsys):
 
 
 def test_resume_skips_completed_adopt(tmp_path, capsys):
-    ym = FakeYm(prod=True, fail="server-config")
+    ym = FakeYm(prod=True, fail="target config")
     res = run_wizard(Script(["adopt", "s", "y", "y"]), invoke=ym,
                      config_exists=lambda s, t: False, cwd=tmp_path)  # fmt: skip
     assert res.exit_code == 1
@@ -196,7 +197,7 @@ def test_resume_skips_completed_adopt(tmp_path, capsys):
     ym2 = FakeYm(prod=True)
     res = run_wizard(Script(["y", "n"]), invoke=ym2, config_exists=lambda s, t: False,
                      cwd=tmp_path, start=site)  # fmt: skip
-    assert ym2.calls == [["--site-dir", str(site), "server-config", "prod", "--from-existing"]]
+    assert ym2.calls == [["--site-dir", str(site), "target", "config", "prod", "--from-existing"]]
     assert "already done: adopt" in capsys.readouterr().out
 
 
@@ -236,7 +237,7 @@ def test_ssh_setup_step_when_key_login_fails(tmp_path):
     res = run_wizard(ask, invoke=ym, config_exists=lambda s, t: True,
                      ssh_ok=lambda s, t: False, cwd=tmp_path)  # fmt: skip
     site = str(tmp_path / "s")
-    assert ym.calls[1] == ["--site-dir", site, "ssh-setup", "prod"]
+    assert ym.calls[1] == ["--site-dir", site, "target", "login", "prod"]
     assert res.exit_code == 0
 
 
@@ -244,5 +245,5 @@ def test_ssh_setup_declined_is_resumable(tmp_path):
     ym = FakeYm(prod=True)
     res = run_wizard(Script(["new", "s", "n"]), invoke=ym, ssh_ok=lambda s, t: False,
                      cwd=tmp_path)  # fmt: skip
-    assert res.resumable and any("ssh-setup prod" in r for r in res.remaining)
+    assert res.resumable and any("target login prod" in r for r in res.remaining)
     assert len(ym.calls) == 1

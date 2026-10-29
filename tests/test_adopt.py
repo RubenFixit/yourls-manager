@@ -259,7 +259,7 @@ def test_adopt_from_dir(tmp_path, fake_core, capsys):
     check_adopted(site, res, todo=True)
     out, err = capsys.readouterr()
     assert "TODO verify" in err and "could not read the active plugin set" in err
-    assert "ym server-config TARGET --from-existing" in out
+    assert "ym target config TARGET --from-existing" in out
     # bundled plugins are not added without a known active state
     names = [p["name"] for p in tomllib.loads((site / "site.toml").read_text())["plugins"]]
     assert names == ["site-branding", "custom-plug"]

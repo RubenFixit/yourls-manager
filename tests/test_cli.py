@@ -17,6 +17,11 @@ def _help(capsys) -> str:
     ("old", "new"),
     [
         (["plugins", "prod"], {"command": "plugin", "plugin_cmd": "apply", "target": "prod"}),
+        (["ssh-setup", "prod"], {"command": "target", "target_cmd": "login", "target": "prod"}),
+        (
+            ["server-config", "prod", "--from-existing"],
+            {"command": "target", "target_cmd": "config", "from_existing": True},
+        ),
     ],
 )
 def test_deprecated_alias_parses_as_new_command(old, new):
@@ -28,7 +33,7 @@ def test_deprecated_alias_parses_as_new_command(old, new):
 
 def test_deprecated_aliases_hidden_from_help(capsys):
     out = _help(capsys)
-    for old in ("plugins",):
+    for old in ("plugins", "ssh-setup", "server-config"):
         assert f"\n    {old} " not in out
 
 

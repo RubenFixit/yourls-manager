@@ -214,7 +214,7 @@ def test_doctor(site, tmp_path, monkeypatch, capsys):
     assert "ok    remote: none (local only)" in out
     assert "ok    login: local target (no host)" in out
     assert "FAIL  php: command not found: php" in out
-    assert "FAIL  server config" in out and "ym server-config local" in out
+    assert "FAIL  server config" in out and "ym target config local" in out
     assert "warn  http: install pending" in out
     assert "warn  deployed: nothing deployed yet" in out
 

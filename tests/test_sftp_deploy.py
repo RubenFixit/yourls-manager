@@ -157,7 +157,7 @@ def test_deploy_flow(tmp_path, upstream, account, ssh_home, client_key, state_se
     # ---- missing server-local config
     assert main([*S, "deploy", "prod"]) == 2
     err = capsys.readouterr().err
-    assert "ym server-config prod" in err and "yourls-config/test-links.php" in err
+    assert "ym target config prod" in err and "yourls-config/test-links.php" in err
     account.write("www/yourls-config/test-links.php", "<?php // secrets\n", 0o600)
 
     # ---- dry run: plan only

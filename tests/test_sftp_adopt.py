@@ -1,4 +1,4 @@
-"""`ym adopt` from sftp targets (design §10.4), then server-config + deploy over SFTP."""
+"""`ym adopt` from sftp targets (design §10.4), then target config + deploy over SFTP."""
 
 from __future__ import annotations
 
@@ -88,8 +88,8 @@ def test_adopt_from_sftp_target_then_deploy(
     git(site, "commit", "-q", "-m", "adopt")
     capsys.readouterr()
 
-    # ---- server-config --from-existing over SFTP, then deploy
-    assert main([*S, "server-config", "prod", "--from-existing"]) == 0
+    # ---- target config --from-existing over SFTP, then deploy
+    assert main([*S, "target", "config", "prod", "--from-existing"]) == 0
     cfg_file = account.real("yourls-config/t.php")
     assert cfg_file.read_text() == REAL_CONFIG
     assert stat.S_IMODE(cfg_file.stat().st_mode) == 0o600
