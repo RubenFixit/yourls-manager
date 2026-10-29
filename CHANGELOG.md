@@ -4,11 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-29
+
+Release artifacts for sites that ym doesn't deploy, and the template's CI provider choice (template v0.7.0). The 0.7 deprecated spellings are gone.
+
 ### Added
 
 - `ym artifact build [--ref REF] [--out DIR] [--format F ...] [--allow-untagged]`: build a release tag's web root into reproducible `.tar.gz` / `.zip` archives (no top-level directory; sorted entries, fixed times, owners and modes, so rebuilding a tag gives the same bytes), with a `<archive>.sha256` per archive and a `<name>.json` with the release metadata (site, version, tag, rc, commit, core, plugins, ym version, file hashes). Refuses commits without a release tag and dirty trees. Default output: `dist-artifacts/`. Nothing is uploaded: publishing is a CI job (design §15).
 - `[artifact]` in `site.toml`: `enabled`, `formats` (`tar.gz`, `zip`) and `name` (`{slug}`, `{version}`, `{tag}`).
 - `ym template update --data K=V` (repeatable): change a template answer, e.g. `--data ci_provider=gitlab` or `--data release_artifact=true` (passed to `copier update`).
+- `ym new` prints release and artifact next steps for an artifact-only site (`[artifact] enabled = true`, no targets).
 - `ym doctor`: sites with `[artifact] enabled = true` and no deploy targets are reported as artifact-only (ok, not a warning), and doctor warns when no CI file of the site's `ci_provider` runs `ym artifact build`.
 
 ### Changed
@@ -194,7 +199,8 @@ Onboarding commands that work from the globally installed tool, before a site re
 - `ym-helper.php` server-side helper (`info`, `dump`, `upgrade`, `plugins`, `version`) with a JSON-on-stdout contract.
 - Redirect verification from `tests/redirects.toml` plus a JSON health check.
 
-[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.4.3...v0.5.0

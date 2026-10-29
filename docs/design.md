@@ -1,6 +1,6 @@
 # yourls-manager design
 
-Current as of **v0.7.0** (template v0.6.0). Section titles name the version that introduced a feature; the text describes what is implemented now, with current command names. §14 records the v0.7 command regrouping and maps old names to new ones.
+Current as of **v0.8.0** (template v0.7.0). Section titles name the version that introduced a feature; the text describes what is implemented now, with current command names. §14 records the v0.7 command regrouping and maps old names to new ones (the old spellings were removed in 0.8).
 
 Two public repos under `github.com/RubenFixit`:
 
@@ -451,16 +451,16 @@ yourls-manager: alias mechanism + `plugins`; `target login/config`; `target add/
 
 The template pins `manager_version`, so it moved to the new names only after v0.7.0 was tagged: new sites pin `v0.7.0`; `check-updates.yml` runs `ym update --check` and then one `ym update --force` (instead of `ym core --version latest` + `ym sync --update --force`); the README, site.toml comments, `config.example.php` and copier messages use the new names; with no deploy host, they point at `ym target add prod` (the commented prod block stays as an example). Existing sites keep working on their pinned version and pick this up with `ym template update --manager-version v0.7.0`.
 
-### 14.6 Next
+### 14.6 0.8
 
-- 0.8: remove the deprecated spellings (`_deprecated` calls, the hidden options, and the legacy wizard state file names).
-- 0.8: release artifacts and the template's CI provider choice (§15).
+- The deprecated spellings are removed (`_deprecated` and its calls, the hidden options, the legacy wizard state file names); `test_cli.py` checks that argparse rejects each of them.
+- Release artifacts and the template's CI provider choice (§15).
 
 ---
 
 ## 15. Release artifacts and CI providers (v0.8)
 
-The yourls-manager part (§15.1–15.3) is built and unreleased (it ships in 0.8.0); the template part (§15.4–15.5) is not built yet.
+Built: yourls-manager 0.8.0 (§15.1–15.3, plus `ym template update --data` and the GitLab checks of §15.4) and template v0.7.0 (§15.4–15.5).
 
 ### 15.0 Why
 
@@ -527,24 +527,30 @@ Prerequisite for GitLab publishing; also useful on its own.
   ```
   template/{% if ci_provider == 'github' %}.github{% endif %}/workflows/deploy.yml.jinja
   template/{% if ci_provider == 'github' %}.github{% endif %}/workflows/check-updates.yml.jinja
+  template/{% if ci_provider == 'github' %}.github{% endif %}/workflows/{% if release_artifact %}publish.yml{% endif %}.jinja
+  template/{% if ci_provider == 'github' %}.github{% endif %}/dependabot.yml
   template/{% if ci_provider == 'gitlab' %}.gitlab-ci.yml{% endif %}.jinja
   ```
 
-  `none` renders no CI files. Switching later: `ym template update --data ci_provider=gitlab` (passed through to `copier update`).
-- `.gitlab-ci.yml` carries the same jobs as the GitHub workflows: `deploy` (release tags, only `ci = true` targets, key and known hosts from File-type CI/CD variables scoped to the environment; `v*` must be a protected tag for protected variables), `check-updates` (scheduled pipeline; opens the MR with `git push -o merge_request.create` using a project access token with `write_repository`) and `publish` (§15.5).
-- `github_owner` becomes `repo_url` (used in docs and links only).
-- `ym repo create` and `ym ci setup|status` remain GitHub-only (§13); on a GitLab site they say so and point to the README's manual setup. A GitLab backend is out of scope.
+  `none` renders no CI files. Switching later: `ym template update --data ci_provider=gitlab` (`--data K=V`, repeatable, is passed through to `copier update`); the update deletes the old provider's files. `ci_deploy` is asked only when `ci_provider != 'none'`. Sites from before the question get `github`, and ym reads the answer from `.copier-answers.yml` (`config.ci_provider()`; missing = `github`).
+- `.gitlab-ci.yml` (image `ghcr.io/astral-sh/uv:python3.13-bookworm`, `GIT_DEPTH: 0`) carries the same jobs as the GitHub workflows:
+  - `deploy-prod` (final release tags, environment `production`) and `deploy-staging` (rc tags, environment `staging`), sharing a hidden `.deploy` job; a web pipeline with `TARGET=<name>` deploys that target (prod in `production`, others in `staging`). Like `deploy.yml`, only `ci = true` targets deploy (others exit 0 with a message). Key and known hosts come from File-type variables `DEPLOY_SSH_KEY` / `DEPLOY_KNOWN_HOSTS` scoped to the environment; `v*` must be a protected tag for protected variables. Each environment is a `resource_group`.
+  - `check-updates` (scheduled pipelines only): `ym update --check`, then `ym update --force`, commit to `ym/upstream-updates` and `git push -o merge_request.create ...` with a project access token (`YM_UPDATE_TOKEN`, `write_repository`) substituted into `CI_REPOSITORY_URL`.
+  - `publish` (§15.5).
+- `github_owner` becomes `repo_url` (optional; used in the README and the artifact download URLs).
+- `ym repo create` and `ym ci setup|status` remain GitHub-only (§13); on a GitLab site they say so and point to the README's manual setup ("GitLab CI"), before running gh. `ym ci` also refuses `ci_provider = none` (no workflow to set up); `ym repo create` doesn't. `ym doctor` reports a `ci = true` target as "GitLab CI (not checked)" on GitLab sites and warns on sites without CI. A GitLab backend is out of scope.
 
 ### 15.5 Template: publishing artifacts
 
 - New copier question `release_artifact: bool` (default `false`): writes `[artifact]` to site.toml (active, or commented out when false) and adds the publish job when `ci_provider != 'none'`.
-- Publish job, on every release tag (`v*`, including rc tags so consumers can qualify candidates): `uv run --locked ym artifact build --ref "$TAG" --out out/`, then
-  - GitLab: upload every file in `out/` to the Generic Package Registry (`$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/<slug>/<version>/<file>`, `JOB-TOKEN: $CI_JOB_TOKEN`) and create a release for the tag linking them. README recommends enabling "Do not allow duplicate generic packages" so a version can't be replaced.
-  - GitHub: `gh release create "$TAG" out/* --verify-tag` (`--prerelease` for rc tags), job permission `contents: write`.
+- Publish job, on every release tag (`v*`, including rc tags so consumers can qualify candidates): `uv run --locked ym artifact build --ref "$TAG" --out <temp dir outside the checkout>` (so the tree stays clean), then
+  - GitLab (`publish` job, rules: final and rc release tags): a Python step uploads every file to the Generic Package Registry (`$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/<slug>/<version>/<file>`, `JOB-TOKEN: $CI_JOB_TOKEN`; slug and version from the `.json`) and creates a release for the tag (`POST .../releases`, description `$CI_COMMIT_TAG_MESSAGE`) linking them; a 409 (release exists, e.g. a re-run) is reported and not an error. README recommends enabling "Do not allow duplicate generic packages" so a version can't be replaced.
+  - GitHub (`publish.yml`, rendered only with `release_artifact`): `gh release create "$TAG" <files> --verify-tag --title "$TAG" --notes-from-tag` (`--prerelease` for rc tags), checkout with `fetch-depth: 0`, permission `contents: write`.
 - Publish and deploy are independent jobs; a tag may run either, both or neither. An artifact-only site has `release_artifact = true` and no deploy targets.
-- Site README section "Consuming the artifact": URL pattern, verify the `.sha256`, extract into the web root, provide the server-local config via `YOURLS_CONFIG_FILE`.
+- Site README sections "Release artifacts" and "Consuming the artifact": URL pattern (GitHub release download, or the GitLab package URL derived from `repo_url`), verify the `.sha256`, extract into the web root, provide the server-local config via `YOURLS_CONFIG_FILE`, install/upgrade page and plugins. `.gitignore` gains `/dist-artifacts/`.
+- `site.toml` is site-owned, so turning on `release_artifact` later with `ym template update --data` adds the publish job but not the `[artifact]` table (the README says to add it). `ym new` prints release/artifact next steps instead of the deploy ones for a site with `[artifact] enabled = true` and no targets.
 
 ### 15.6 Implementation order
 
-1. yourls-manager: `[artifact]` parsing, `artifact.py` + `ym artifact build`, doctor changes, tests (reproducibility: two builds of one tag are byte-identical; tag/dirty refusals; sidecar contents). Done (`tests/test_artifact.py`, `tests/test_config.py`). Release 0.8.0 together with the §14.6 removals: open.
-2. Template: `ci_provider` with conditional file names, `.gitlab-ci.yml`, `release_artifact` and the publish jobs; README; pin `v0.8.0`.
+1. yourls-manager: `[artifact]` parsing, `artifact.py` + `ym artifact build`, doctor changes, tests (reproducibility: two builds of one tag are byte-identical; tag/dirty refusals; sidecar contents). Released in 0.8.0 together with the §14.6 removals, `ym template update --data` and the GitLab-aware GitHub commands. Done.
+2. Template v0.7.0: `ci_provider` with conditional file names, `.gitlab-ci.yml`, `release_artifact` and the publish jobs; README; pin `v0.8.0`. Its CI renders every provider, parses the CI files and switches providers with `copier update`; `tests/test_newsite.py::test_artifact_only_gitlab_site` runs `ym new` → `ym release` → `ym artifact build` → `ym doctor` → `ym template update --data ci_provider=github` against it. Done.

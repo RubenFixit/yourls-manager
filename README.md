@@ -131,6 +131,10 @@ Or by hand: set `ci = true` on the target, and under Settings → Environments �
 
 `.github/workflows/check-updates.yml` runs `ym update --check` every week and opens a pull request when there are updates. For that, enable *Allow GitHub Actions to create and approve pull requests* under Settings → Actions → General.
 
+### GitLab CI, or no CI
+
+The template's `ci_provider` answer picks the CI files: `github` (default, the workflows above), `gitlab` (a `.gitlab-ci.yml` with the same jobs: deploy on release tags for `ci = true` targets, scheduled `check-updates` opening a merge request, and the artifact publish job) or `none`. Choose it in `ym new` / `ym init`, or switch later with `ym template update --data ci_provider=gitlab`. `ym repo create` and `ym ci` are GitHub-only; a GitLab site's README ("GitLab CI") lists the manual setup: protected `v*` tags, the `production` / `staging` environments with File-type variables `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS`, and a pipeline schedule plus a `YM_UPDATE_TOKEN` project access token for update merge requests.
+
 ## Updating an existing install
 
 **Routine updates** (the weekly `check-updates` pull request does steps 1 and 2 for you):
@@ -214,7 +218,7 @@ This writes to `dist-artifacts/` (or `--out DIR`):
 | `rfixme-1.10.6-2.tar.gz.sha256` | `sha256sum` format: `<hex>  <file name>`. |
 | `rfixme-1.10.6-2.json` | Site, version, tag, rc, commit and commit time, locked core and plugin commits, the ym version, and each archive's sha256. |
 
-ym doesn't upload anything; the site's CI publishes the files. `ym doctor` treats a site with `enabled = true` and no deploy targets as artifact-only and warns when no CI file runs `ym artifact build`. `--allow-untagged` builds an untagged commit as version `0.0.0-dev+<sha>` for local tests.
+ym doesn't upload anything; the site's CI publishes the files. Sites from the template get this with the `release_artifact` answer (`ym new ... --data release_artifact=true`, or `ym template update --data release_artifact=true` plus the `[artifact]` table by hand): a publish job attaches the files to a GitHub release, or with `ci_provider = gitlab` uploads them to GitLab's Generic Package Registry and creates a release. The site README explains how a consumer pins, verifies and extracts them. `ym doctor` treats a site with `enabled = true` and no deploy targets as artifact-only and warns when no CI file runs `ym artifact build`. `--allow-untagged` builds an untagged commit as version `0.0.0-dev+<sha>` for local tests.
 
 ## Setup wizard
 
