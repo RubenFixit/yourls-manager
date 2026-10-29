@@ -1,4 +1,4 @@
-"""`ym new` and `ym template-update` (design §9): create/update a site repo with Copier.
+"""`ym new` and `ym template update` (design §9): create/update a site repo with Copier.
 
 Copier is run as a subprocess (``uvx copier`` when uv is available, else ``copier``) so it
 never becomes a runtime dependency of the tool.

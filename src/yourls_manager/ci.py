@@ -343,7 +343,7 @@ def ci_setup(
     console.info(f"repository: {repo}")
     if not (cfg.root / WORKFLOW).is_file():
         console.warn(f"{WORKFLOW} is missing; these secrets are for the site template's deploy"
-                     " workflow (`ym template-update`)")  # fmt: skip
+                     " workflow (`ym template update`)")  # fmt: skip
 
     # Look everything up (and confirm host keys) before changing anything.
     prepared = []

@@ -121,10 +121,10 @@ def test_release_flow(site, capsys):
     git(site, "add", "-A")
     git(site, "commit", "-q", "-m", "fix")
     assert main([*S, "release", "--rc"]) == 0
-    assert main([*S, "release", "--promote"]) == 0
+    assert main([*S, "release", "promote"]) == 0
     assert git(site, "rev-parse", "v1.0.0-1^{}") == git(site, "rev-parse", "v1.0.0-1-rc.2^{}")
     assert git(site, "cat-file", "-p", "v1.0.0-1").splitlines()[1] == "type commit"
-    assert main([*S, "release", "--promote"]) == 2  # already promoted
+    assert main([*S, "release", "promote"]) == 2  # already promoted
     assert main([*S, "release"]) == 2  # HEAD already released as v1.0.0-1
 
     # core update -> notes show the change, revision resets
@@ -137,9 +137,13 @@ def test_release_flow(site, capsys):
     assert [t.name for t in release_tags(site)][-1] == "v1.1.0-1"
 
     git(site, "branch", "-f", "deployed/prod", "v1.0.0-1")
-    assert main([*S, "release", "--list"]) == 0
+    assert main([*S, "release", "list"]) == 0
     out = capsys.readouterr().out
     assert "v1.0.0-1 " in out and "deployed: prod" in out
+    assert main([*S, "release", "--list"]) == 0  # deprecated spelling
+    captured = capsys.readouterr()
+    assert "deployed: prod" in captured.out and "use `ym release list`" in captured.err
+    assert main([*S, "release", "--list", "promote"]) == 2
 
 
 def test_deploy_policy(site, capsys):

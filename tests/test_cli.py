@@ -29,6 +29,10 @@ def _help(capsys) -> str:
         (["status"], {"command": "doctor", "local": True, "target": None, "with_plugins": True}),
         (["check", "--json"], {"command": "update", "check": True, "json": True}),
         (["setup", "site"], {"command": "init"}),
+        (
+            ["template-update", "--defaults"],
+            {"command": "template", "template_cmd": "update", "defaults": True},
+        ),
     ],
 )
 def test_deprecated_alias_parses_as_new_command(old, new):
@@ -40,7 +44,8 @@ def test_deprecated_alias_parses_as_new_command(old, new):
 
 def test_deprecated_aliases_hidden_from_help(capsys):
     out = _help(capsys)
-    for old in ("plugins", "ssh-setup", "server-config", "sync", "status", "check", "setup"):
+    for old in ("plugins", "ssh-setup", "server-config", "sync", "status", "check", "setup",
+                "template-update"):  # fmt: skip
         assert f"\n    {old} " not in out
 
 
@@ -68,3 +73,22 @@ def test_update_check_rejects_update_options(tmp_path, capsys):
     assert main([*S, "update", "--check", "--commit"]) == 2
     assert main([*S, "update", "--json"]) == 2
     assert main([*S, "doctor", "prod", "--local"]) == 2
+
+
+@pytest.mark.parametrize(
+    ("argv", "expect"),
+    [
+        (["release"], {"release_cmd": None, "rc": False, "push": False}),
+        (["release", "--rc", "--push", "-m", "x"], {"rc": True, "push": True, "message": "x"}),
+        (["release", "promote", "--push"], {"release_cmd": "promote", "push": True}),
+        # options before the action are kept (subparser defaults are suppressed)
+        (["release", "--push", "--dry-run", "promote"], {"push": True, "dry_run": True}),
+        (["release", "list"], {"release_cmd": "list"}),
+        (["release", "--list"], {"release_cmd": None, "list_flag": True}),  # deprecated
+        (["release", "--promote"], {"release_cmd": None, "promote_flag": True}),  # deprecated
+    ],
+)
+def test_release_parsing(argv, expect):
+    args = build_parser().parse_args(argv)
+    for key, value in expect.items():
+        assert getattr(args, key) == value

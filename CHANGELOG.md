@@ -23,6 +23,9 @@ All notable changes to this project are documented here. The format follows
 - `ym init [DIR]`, the new name of the `ym setup` wizard. Its progress files are now
   `.git/ym-init.json` and `$XDG_STATE_HOME/yourls-manager/init.json`; an unfinished
   `ym setup` is still found and resumed (the old files are replaced on the next save).
+- `ym template update`, the new name of `ym template-update` (same options).
+- `ym release promote` and `ym release list`, replacing the `--promote` / `--list` flags.
+  Plain `ym release [--rc]` still tags the next release.
 - `ym doctor --local`: only the tools and the site repo, no target checks (offline). The
   report now names the site and shows the locked core commit; drift problems are listed
   one per line.
@@ -44,6 +47,8 @@ are hidden from `ym --help` and will be removed in 0.8.
 - `ym core --version V`: use `ym core V` (the option clashed with the global `ym --version`).
 - `ym check`: use `ym update --check`.
 - `ym setup [DIR]`: use `ym init [DIR]`.
+- `ym template-update`: use `ym template update`.
+- `ym release --promote` / `ym release --list`: use `ym release promote` / `ym release list`.
 - `ym status`: use `ym doctor --local` (and `ym plugin list` for plugin details). The alias
   runs both, and now exits 1 on drift.
 

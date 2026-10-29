@@ -1,4 +1,4 @@
-"""`ym new` and `ym template-update` (design §9)."""
+"""`ym new` and `ym template update` (design §9)."""
 
 from __future__ import annotations
 
@@ -55,15 +55,15 @@ def test_template_update_requires_answers_and_clean_tree(tmp_path, capsys):
     site = tmp_path / "site"
     site.mkdir()
     (site / "site.toml").write_text("")
-    assert main(["--site-dir", str(site), "template-update"]) == 2
+    assert main(["--site-dir", str(site), "template", "update"]) == 2
     assert ".copier-answers.yml" in capsys.readouterr().err
     (site / ".copier-answers.yml").write_text("_src_path: x\n")
-    assert main(["--site-dir", str(site), "template-update"]) == 2
+    assert main(["--site-dir", str(site), "template", "update"]) == 2
     assert "not a git repository" in capsys.readouterr().err
     git(site, "init", "-q")
-    assert main(["--site-dir", str(site), "template-update", "--manager-version", "0.2"]) == 2
+    assert main(["--site-dir", str(site), "template", "update", "--manager-version", "0.2"]) == 2
     assert "--manager-version" in capsys.readouterr().err
-    assert main(["--site-dir", str(site), "template-update"]) == 2
+    assert main(["--site-dir", str(site), "template", "update"]) == 2
     assert "uncommitted changes" in capsys.readouterr().err
 
 
@@ -130,13 +130,13 @@ def test_new_and_template_update(tmp_path, fake_github, no_uv_lock, capfd):
     assert main(["--site-dir", str(dest), "doctor", "--local"]) == 0
     assert "no drift" in capfd.readouterr().out
 
-    # template-update: dirty tree refused, then pins a new manager version
+    # template update: dirty tree refused, then pins a new manager version
     (dest / "site.toml").write_text((dest / "site.toml").read_text() + "\n# local edit\n")
-    assert main(["--site-dir", str(dest), "template-update", "--defaults"]) == 2
+    assert main(["--site-dir", str(dest), "template", "update", "--defaults"]) == 2
     git(dest, "commit", "-qam", "edit")
     S = ["--site-dir", str(dest)]
     rc = main(
-        [*S, "template-update", "--vcs-ref", "HEAD", "--defaults", "--manager-version", "v9.9.9"]
+        [*S, "template", "update", "--vcs-ref", "HEAD", "--defaults", "--manager-version", "v9.9.9"]
     )
     assert rc == 0
     out = capfd.readouterr().out

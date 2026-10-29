@@ -60,6 +60,15 @@ def _deprecated(
     return p
 
 
+def _release_tag_flags(p: argparse.ArgumentParser, *, sub: bool) -> None:
+    # In a subparser the defaults must not overwrite values given before the action
+    # (`ym release --push promote`), so they are SUPPRESSed there.
+    kw: dict[str, Any] = {"default": argparse.SUPPRESS} if sub else {}
+    p.add_argument("--push", action="store_true", help="push the new tag to origin", **kw)
+    p.add_argument("--dry-run", action="store_true", help="show the tag and notes only", **kw)
+    p.add_argument("-m", "--message", help="extra text for the release notes", **kw)
+
+
 def _sync_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("--update", action="store_true", help="re-resolve refs to latest commits")
     p.add_argument("--dry-run", action="store_true")
@@ -235,15 +244,26 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser(
         "release",
         parents=[common],
-        help="tag a release: v<yourls>-<rev>[-rc.<n>] with notes from the lock diff",
+        help="tag a release: v<yourls>-<rev>[-rc.<n>]; list, promote",
+        description=(
+            "Without an action: tag the next release v<yourls>-<rev> (--rc: -rc.<n>) on a"
+            " clean, drift-free tree, with release notes from the lock diff."
+        ),
     )
     g = p.add_mutually_exclusive_group()
     g.add_argument("--rc", action="store_true", help="tag a release candidate")
-    g.add_argument("--promote", action="store_true", help="tag the newest rc as its final")
-    g.add_argument("--list", action="store_true", help="list releases and where they're deployed")
-    p.add_argument("--push", action="store_true", help="push the new tag to origin")
-    p.add_argument("--dry-run", action="store_true", help="show the tag and notes only")
-    p.add_argument("-m", "--message", help="extra text for the release notes")
+    # deprecated spellings of `ym release promote` / `ym release list`
+    g.add_argument("--promote", dest="promote_flag", action="store_true", help=argparse.SUPPRESS)
+    g.add_argument("--list", dest="list_flag", action="store_true", help=argparse.SUPPRESS)
+    _release_tag_flags(p, sub=False)
+    rsub = p.add_subparsers(dest="release_cmd", metavar="ACTION")
+    q = rsub.add_parser(
+        "promote", parents=[common], help="tag the newest rc's commit as its final release"
+    )
+    _release_tag_flags(q, sub=True)
+    rsub.add_parser(
+        "list", parents=[common], help="releases, their dates, and where each is deployed"
+    )
 
     _deprecated(
         sub,
@@ -372,8 +392,21 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
     p.add_argument("--no-vendor", action="store_true", help="skip `ym core` + `ym plugin sync`")
     p.add_argument("--no-git", action="store_true", help="skip git init and the initial commit")
 
+    def template_update_args(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--vcs-ref", metavar="REF", help="template git ref (default: latest tag)")
+        p.add_argument(
+            "--manager-version",
+            metavar="vX.Y.Z",
+            help="pin this yourls-manager tag in pyproject.toml (manager_version answer)",
+        )
+        p.add_argument("--defaults", action="store_true", help="accept defaults for new questions")
+
     p = sub.add_parser(
-        "template-update",
+        "template", parents=[common], help="the site template (yourls-site-template): update"
+    )
+    tsub = p.add_subparsers(dest="template_cmd", metavar="ACTION", required=True)
+    q = tsub.add_parser(
+        "update",
         parents=[common],
         help="pull template changes into this site repo (copier update)",
         description=(
@@ -381,13 +414,9 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
             " what changed. Previously answered questions are not asked again."
         ),
     )
-    p.add_argument("--vcs-ref", metavar="REF", help="template git ref (default: latest tag)")
-    p.add_argument(
-        "--manager-version",
-        metavar="vX.Y.Z",
-        help="pin this yourls-manager tag in pyproject.toml (manager_version answer)",
-    )
-    p.add_argument("--defaults", action="store_true", help="accept defaults for new questions")
+    template_update_args(q)
+    _deprecated(sub, common, "template-update", "template update", template_update_args,
+                command="template", template_cmd="update")  # fmt: skip
 
     p = sub.add_parser(
         "adopt",
@@ -564,7 +593,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         )
         return EXIT_OK
 
-    if cmd == "template-update":
+    if cmd == "template":
         from .newsite import template_update
 
         start = args.site_dir.resolve() if args.site_dir else None
@@ -756,13 +785,25 @@ def _dispatch(args: argparse.Namespace) -> int:
     if cmd == "release":
         from .release import list_releases, release
 
-        if args.list:
+        action = args.release_cmd
+        for flag, name in (("list_flag", "list"), ("promote_flag", "promote")):
+            if getattr(args, flag):
+                if action is not None:
+                    raise UsageError(f"--{name} and `ym release {action}` don't go together")
+                console.warn(
+                    f"`ym release --{name}` is deprecated and will be removed in {REMOVED_IN};"
+                    f" use `ym release {name}`"
+                )
+                action = name
+        if action == "list":
             list_releases(cfg)
             return EXIT_OK
+        if action == "promote" and args.rc:
+            raise UsageError("--rc doesn't go with promote")
         release(
             cfg,
             rc=args.rc,
-            promote=args.promote,
+            promote=action == "promote",
             push=args.push,
             dry_run=args.dry_run,
             message=args.message,

@@ -274,7 +274,7 @@ def check_deploy(
         if not force:
             raise UsageError(
                 f'target {spec.name} only accepts releases (accept = "release") and {why}.\n'
-                "Create one with `ym release` (or promote an rc with `ym release --promote`),"
+                "Create one with `ym release` (or promote an rc with `ym release promote`),"
                 " check it out, and deploy again; --force overrides."
             )
         console.warn(f"FORCED deploy to {spec.name}: {why} (recorded in release.json)")

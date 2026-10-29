@@ -207,8 +207,8 @@ If the database has to go back too, restore the dump taken before the bad deploy
 **Template updates** (workflows, config shim, `.htaccess`, ...): with a clean Git tree, run
 
 ```sh
-ym template-update                          # pull the latest yourls-site-template changes
-ym template-update --manager-version v0.6.0 # also bump the yourls-manager pin in pyproject.toml
+ym template update                          # pull the latest yourls-site-template changes
+ym template update --manager-version v0.6.0 # also bump the yourls-manager pin in pyproject.toml
 ```
 
 then review the diff and commit. Files you own (`site.toml`, `tests/redirects.toml`, branding
@@ -216,7 +216,7 @@ assets) are never touched.
 
 **Tool updates:** `uv tool upgrade yourls-manager` updates the `ym` on your PATH. The site's
 CI uses the version pinned in the site's `pyproject.toml`. Bump that pin with
-`ym template-update --manager-version vX.Y.Z`.
+`ym template update --manager-version vX.Y.Z`.
 
 ## Releases and deploy policy
 
@@ -228,9 +228,9 @@ the locked YOURLS version and the existing tags, so several releases a day are f
 ```sh
 ym release --dry-run          # show the next tag and its notes
 ym release --rc --push        # v1.10.6-3-rc.1: CI deploys it to staging (if defined)
-ym release --promote --push   # v1.10.6-3 on the rc's commit: CI deploys it to prod
+ym release promote --push   # v1.10.6-3 on the rc's commit: CI deploys it to prod
 ym release --push             # or tag the next final release straight away
-ym release --list             # releases, dates, and where each is deployed
+ym release list             # releases, dates, and where each is deployed
 ```
 
 The annotated tag carries release notes: YOURLS and plugin changes since the previous final
@@ -298,7 +298,7 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 | `ym init [DIR]` | Interactive wizard for a new site or an adoption; resumable (see [Setup wizard](#setup-wizard)). |
 | `ym target login TARGET [--key PATH]` | Check that ym can log in to the target without prompts (formerly `ym ssh-setup`). rsync targets need SSH key login. If it fails: create a key with `ssh-keygen` (default `~/.ssh/id_ed25519`) when there is none, install it with `ssh-copy-id` (asks for the SSH password once and to trust the host key; falls back to plain `ssh` where `ssh-copy-id` is missing), then check again. Explains the fix when a passphrase-protected key isn't in an agent (`ssh-add`) or a non-default key needs an `~/.ssh/config` entry. For `sftp` targets the check is an SFTP login (SFTP-only accounts have no shell); a password in `YM_<TARGET>_PASSWORD` also works there, so the key is optional. Unknown host keys are shown with their SHA256 fingerprint for you to trust, and the key is appended to `.ssh/authorized_keys` over SFTP after one password login (`.ssh` 700, file 600). |
 | `ym new [DEST] [--template SRC] [--vcs-ref REF] [--data K=V ...] [--defaults] [--no-vendor] [--no-git]` | Create a site repo from the template. The default template is `gh:RubenFixit/yourls-site-template`; override it with `--template` or the `YM_TEMPLATE` environment variable. Copier asks its questions unless you pass `--defaults`. Then `ym new` runs `ym core` + `ym plugin sync` (skip with `--no-vendor`), runs `git init -b main` and makes the first commit (skip with `--no-git`; skipped with a warning if no Git identity is set), and tries `uv lock`. Refuses a non-empty `DEST`. |
-| `ym template-update [--vcs-ref REF] [--manager-version vX.Y.Z] [--defaults]` | Run `copier update` in the site repo. Refuses if the Git tree is dirty. `--manager-version` also bumps the yourls-manager pin. Then it tries `uv lock` and prints `git diff --stat` for you to review and commit. |
+| `ym template update [--vcs-ref REF] [--manager-version vX.Y.Z] [--defaults]` | Run `copier update` in the site repo. Refuses if the Git tree is dirty. `--manager-version` also bumps the yourls-manager pin. Then it tries `uv lock` and prints `git diff --stat` for you to review and commit. |
 | `ym target add NAME [--type rsync\|sftp] [--host H] [--user U] [--port N] [--path WEBROOT] [--php PHP] [--url URL] [--accept any\|release]` | Append a `[deploy.targets.NAME]` block to `site.toml` (comments kept; restored if the result doesn't validate). On a terminal it asks for what you leave out; otherwise `--path` is required, plus `--host` for sftp. No `--host` means an rsync target on this machine. `prod` defaults to `accept = "release"`, other targets to `"any"`. |
 | `ym target list [--json]` | Show each target's type, location, URL, deploy policy and whether CI deploys it. |
 | `ym target config TARGET [--force] [--from-existing] [--db-host H] [--db-name N] [--db-user U] [--db-prefix P] [--admin-user U]` | Create the server-local config at the target's `config_file` from `server/config.example.php`. It fills in the DB settings, `YOURLS_SITE`, a fresh `YOURLS_COOKIEKEY` and one admin user. Passwords come from `YM_DB_PASSWORD` / `YM_ADMIN_PASSWORD` or a prompt, never from the command line. The admin password is hashed by the target's PHP (for `sftp` targets: locally with bcrypt, cost 10, in the same `phpass:` format). The file is written with mode 0600. It won't overwrite an existing file unless you pass `--force`, which first keeps a copy as `<file>.bak-<UTC timestamp>`. `--from-existing` copies the live install's `user/config.php` (or `includes/config.php`) to `config_file` instead; use it when adopting. |
@@ -316,7 +316,9 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 | `ym deploy TARGET [--dry-run] [--no-build] [--skip-backup] [--skip-verify] [--verify-remote] [--allow-dirty] [--force]` | `rsync` targets: build → preflight → upload helper → DB backup → rsync → DB upgrade → plugins → record → verify. `--dry-run` shows rsync's itemized changes and stops. `sftp` targets: see [SFTP targets](#sftp-targets); `--verify-remote` (sftp only) also checks every deployed file on the server. Refuses uncommitted changes unless `--allow-dirty`; targets with `accept = "release"` only take a final release tag (`--force` overrides, recorded). Afterwards moves the `deployed/<target>` branch. See [Releases and deploy policy](#releases-and-deploy-policy). |
 | `ym verify TARGET` / `ym verify --url URL` | Check `GET /health.php` (expects `{"ok": true}`), then each case in `tests/redirects.toml`. Redirects are not followed. |
 | `ym plugin apply TARGET` | Make the active plugin set on the target exactly the set marked `active` in `site.toml`. Not available for `sftp` targets (it prints what to activate in the admin UI). |
-| `ym release [--rc \| --promote \| --list] [--push] [--dry-run] [-m TEXT]` | Tag the next release `v<yourls>-<rev>` (`--rc`: `-rc.<n>`; `--promote`: the newest rc's final) on a clean, drift-free tree, with release notes from the lock diff. `--list` shows releases and which targets have them deployed. |
+| `ym release [--rc] [--push] [--dry-run] [-m TEXT]` | Tag the next release `v<yourls>-<rev>` (`--rc`: `-rc.<n>`) on a clean, drift-free tree, with release notes from the lock diff. |
+| `ym release promote [--push] [--dry-run] [-m TEXT]` | Tag the newest rc's commit as its final release (`vX-N-rc.k` → `vX-N`). |
+| `ym release list` | Releases with dates and which targets have them deployed. |
 | `ym doctor [TARGET] [--local]` | Read-only health report, one line per check (ok / warn / FAIL) with a fix hint: git, uv, rsync and ssh (when a target needs them); `site.toml` valid; lock present without drift; uncommitted changes; HEAD pushed. Per target (all, or the one given): login, PHP CLI version (rsync), server config present, `url` is https, install/upgrade pending, and the deployed commit vs HEAD (from release.json). Exits 1 if any check fails. |
 | `ym repo create [--name NAME] [--owner OWNER] [--public] [--dry-run]` | Create the site's GitHub repository with the GitHub CLI (private by default), add it as `origin` and push the current branch (no tags). Deploying is unaffected. See [Store the site on GitHub](#store-the-site-on-github). |
 | `ym ci setup [TARGET ...] [--repo OWNER/NAME] [--rotate] [--dry-run]` | Enable deploys from GitHub Actions: per target, create its environment (`prod` → `production`, others → `staging`), install a new CI key on the server and store it as `DEPLOY_SSH_KEY`, store the host keys from `~/.ssh/known_hosts` as `DEPLOY_KNOWN_HOSTS`, and set `ci = true` in site.toml. Offers `gh auth login`, and `ym repo create` if needed. Default targets: `prod`, `staging` and any with `ci = true`. See [Deploy from GitHub Actions](#deploy-from-github-actions-optional). |
@@ -330,7 +332,7 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 `ym core` and `ym plugin sync` won't overwrite vendored files that have uncommitted Git changes,
 because Git is your backup. Commit first or pass `--force`.
 
-`ym new`, `ym init` and `ym template-update` run Copier as `uvx copier`, or as `copier` if
+`ym new`, `ym init` and `ym template update` run Copier as `uvx copier`, or as `copier` if
 uv isn't on your PATH.
 
 ### `ym adopt`
@@ -544,7 +546,7 @@ unless you list them by exact name.
 | Where | Owner | Changed by |
 |---|---|---|
 | `yourls/`, `yourls.lock.json` | `ym` | `ym core`, `ym plugin sync`, `ym adopt` only. Never edit by hand; `ym doctor --local` shows drift. |
-| `overlay/` | you (some files come from the template) | You, `ym adopt`, and `ym template-update` for the template's files. To patch a vendored plugin, put the changed files in `overlay/user/plugins/<name>/`. |
+| `overlay/` | you (some files come from the template) | You, `ym adopt`, and `ym template update` for the template's files. To patch a vendored plugin, put the changed files in `overlay/user/plugins/<name>/`. |
 | `site.toml`, `tests/redirects.toml` | you | You (`ym core` and `ym adopt` update `[core].version` and append plugins, keeping your comments). |
 | Server-local config | the server | `ym target config`. It's never in Git. |
 

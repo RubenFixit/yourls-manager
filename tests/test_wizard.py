@@ -165,7 +165,7 @@ def test_init_requires_tty(capsys):
 
 
 @pytest.mark.parametrize(
-    "cmd", ["new", "template-update", "target config", "adopt", "init", "target login"]
+    "cmd", ["new", "template update", "target config", "adopt", "init", "target login"]
 )
 def test_help(cmd, capsys):
     with pytest.raises(SystemExit) as exc:
