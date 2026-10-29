@@ -15,7 +15,7 @@ import subprocess
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from .config import SiteConfig
+from .config import SiteConfig, ci_provider
 from .util import UsageError, YMError, console, run
 
 GH_INSTALL = "https://cli.github.com (Debian/Ubuntu/WSL: `sudo apt install gh`)"
@@ -158,10 +158,28 @@ def create_repo(cfg: SiteConfig, gh: Gh, repo: str, *, public: bool = False) -> 
     console.info(f"pushed {branch}; tags are not pushed (`git push --tags` when you want them)")
 
 
+def require_github(cfg: SiteConfig, command: str, *, allow_none: bool = False) -> None:
+    """GitHub-only commands refuse sites whose template CI is GitLab (design §15.4)."""
+    provider = ci_provider(cfg.root)
+    if provider == "gitlab":
+        raise UsageError(
+            f"`ym {command}` works with GitHub only, and this site uses GitLab CI"
+            " (ci_provider = gitlab in .copier-answers.yml). Set up the GitLab project, its"
+            ' environments and CI/CD variables by hand: see "GitLab CI" in the site README'
+        )
+    if provider == "none" and not allow_none:
+        raise UsageError(
+            f"`ym {command}` sets up the template's GitHub Actions workflows, but this site has"
+            " none (ci_provider = none). Add them with"
+            " `ym template update --data ci_provider=github`"
+        )
+
+
 def repo_create(cfg: SiteConfig, *, name: str | None = None, owner: str | None = None,
                 public: bool = False, dry_run: bool = False,
                 confirm: Confirm | None = None, gh: Gh | None = None) -> str:  # fmt: skip
     """`ym repo create`: store the site on GitHub. Returns OWNER/NAME."""
+    require_github(cfg, "repo create", allow_none=True)
     gh = gh or Gh(cwd=cfg.root)
     ensure_gh(gh, confirm=confirm)
     existing = current_repo(gh)

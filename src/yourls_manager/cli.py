@@ -385,6 +385,13 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
             help="pin this yourls-manager tag in pyproject.toml (manager_version answer)",
         )
         p.add_argument("--defaults", action="store_true", help="accept defaults for new questions")
+        p.add_argument(
+            "--data",
+            action="append",
+            default=[],
+            metavar="K=V",
+            help="change an answer (repeatable), e.g. ci_provider=gitlab or release_artifact=true",
+        )
 
     p = sub.add_parser(
         "template", parents=[common], help="the site template (yourls-site-template): update"
@@ -585,6 +592,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             vcs_ref=args.vcs_ref,
             manager_version=args.manager_version,
             defaults=args.defaults,
+            data=args.data,
         )
         return EXIT_OK
 

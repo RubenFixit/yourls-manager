@@ -387,3 +387,40 @@ def test_real_key_and_fingerprints(tmp_path):
     fp = ci.fingerprints([key.public])
     assert fp and "SHA256:" in fp[0]
     assert textwrap.dedent(key.private.read_text()).startswith("-----BEGIN OPENSSH")
+
+
+# --------------------------------------------------------------------------- ci_provider (§15.4)
+
+
+def test_gitlab_site_refuses_github_commands(site, fake_gh, capsys):
+    (site / ".copier-answers.yml").write_text("_commit: v0.7.0\nci_provider: gitlab\n")
+    S = ["--site-dir", str(site)]
+    for argv in (["repo", "create"], ["ci", "setup", "prod"], ["ci", "status"]):
+        assert main([*S, *argv]) == 2
+        err = capsys.readouterr().err
+        assert f"`ym {' '.join(argv[:2])}` works with GitHub only" in err
+        assert '"GitLab CI" in the site README' in err
+    assert fake_gh.load()["calls"] == []  # refused before gh runs
+
+
+def test_no_ci_site_refuses_ci_but_may_create_repo(site, fake_gh, capsys):
+    (site / ".copier-answers.yml").write_text("ci_provider: none\n")
+    S = ["--site-dir", str(site)]
+    assert main([*S, "ci", "setup", "prod", "--dry-run"]) == 2
+    assert "ym template update --data ci_provider=github" in capsys.readouterr().err
+    assert main([*S, "repo", "create"]) == 0  # storing the site on GitHub needs no CI
+    assert "already on GitHub: me/site" in capsys.readouterr().out
+
+
+def test_doctor_ci_line_follows_provider(site, capsys):
+    from yourls_manager.doctor import Report, _ci_checks
+
+    cfg = load_site(site)
+    for answers, expect in (
+        ("ci_provider: gitlab\n", "ok    ci: GitLab CI"),
+        ("ci_provider: 'none'\n", "warn  ci: ci = true, but ci_provider = 'none'"),
+    ):
+        (site / ".copier-answers.yml").write_text(answers)
+        rep = Report()
+        _ci_checks(rep, cfg, cfg.target("prod"), {})
+        assert expect in capsys.readouterr().out

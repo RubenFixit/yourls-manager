@@ -245,7 +245,7 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 | `ym init [DIR]` | Interactive wizard for a new site or an adoption; resumable (see [Setup wizard](#setup-wizard)). |
 | `ym new [DEST] [--template SRC] [--vcs-ref REF] [--data K=V ...] [--defaults] [--no-vendor] [--no-git]` | Create a site repo from the template. The default template is `gh:RubenFixit/yourls-site-template`; override it with `--template` or the `YM_TEMPLATE` environment variable. Copier asks its questions unless you pass `--defaults`. Then `ym new` runs `ym core` + `ym plugin sync` (skip with `--no-vendor`), runs `git init -b main` and makes the first commit (skip with `--no-git`; skipped with a warning if no Git identity is set), and tries `uv lock`. Refuses a non-empty `DEST`. |
 | `ym adopt (--from-target TARGET \| --from-dir PATH) [--ignore GLOB ...] [--active A,B,...] [--dry-run]` | Bring an existing YOURLS install under management, inside a repo made by `ym new`. `--active` names the plugins that are active on the install (needed for `sftp` targets; also skips reading them with the PHP helper elsewhere). See [below](#ym-adopt). |
-| `ym template update [--vcs-ref REF] [--manager-version vX.Y.Z] [--defaults]` | Run `copier update` in the site repo. Refuses if the Git tree is dirty. `--manager-version` also bumps the yourls-manager pin. Then it tries `uv lock` and prints `git diff --stat` for you to review and commit. |
+| `ym template update [--vcs-ref REF] [--manager-version vX.Y.Z] [--data K=V ...] [--defaults]` | Run `copier update` in the site repo. Refuses if the Git tree is dirty. `--manager-version` also bumps the yourls-manager pin. `--data` changes an earlier answer, e.g. `--data ci_provider=gitlab` (switch the CI files to GitLab) or `--data release_artifact=true`. Then it tries `uv lock` and prints `git diff --stat` for you to review and commit. |
 
 ### Core and plugins
 
@@ -290,6 +290,8 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 | `ym doctor --local` | The offline part of `ym doctor`: tools, `site.toml`, the locked core version and commit, drift (tree-hash mismatches, plugins in `site.toml` but not in the lock or the reverse), and uncommitted changes. Exits 1 on drift. Plugin details: `ym plugin list`. |
 
 ### GitHub
+
+These commands work with GitHub only. On a site whose template answer is `ci_provider = gitlab` they refuse and point to the site README's GitLab section (set up the project, environments and CI/CD variables by hand); with `ci_provider = none`, `ym ci` refuses because there's no workflow to set up.
 
 | Command | What it does |
 |---|---|

@@ -12,12 +12,11 @@ import shutil
 from collections.abc import Sequence
 from pathlib import Path
 
-from .config import SITE_FILE, find_site_dir, load_site
+from .config import ANSWERS_FILE, SITE_FILE, find_site_dir, load_site
 from .util import UsageError, YMError, console, run
 
 DEFAULT_TEMPLATE = "gh:RubenFixit/yourls-site-template"
 TEMPLATE_ENV = "YM_TEMPLATE"
-ANSWERS_FILE = ".copier-answers.yml"
 INITIAL_COMMIT_MESSAGE = "Create site from yourls-site-template"
 MANAGER_VERSION_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 DATA_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -181,6 +180,7 @@ def template_update(
     vcs_ref: str | None = None,
     manager_version: str | None = None,
     defaults: bool = False,
+    data: list[str] | None = None,
 ) -> None:
     root = find_site_dir(site_dir)
     if not (root / ANSWERS_FILE).is_file():
@@ -204,6 +204,10 @@ def template_update(
         argv.append("--defaults")
     if manager_version:
         argv += ["--data", f"manager_version={manager_version}"]
+    for item in data or []:
+        if "=" not in item or not item.split("=", 1)[0].strip():
+            raise UsageError(f"--data expects KEY=VALUE, got {item!r}")
+        argv += ["--data", item]
     argv.append(str(root))
     console.step("copier update")
     proc = run(argv, cwd=root, env=_NO_PROMPT_ENV, check=False, capture=False)

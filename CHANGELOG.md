@@ -8,7 +8,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 - `ym artifact build [--ref REF] [--out DIR] [--format F ...] [--allow-untagged]`: build a release tag's web root into reproducible `.tar.gz` / `.zip` archives (no top-level directory; sorted entries, fixed times, owners and modes, so rebuilding a tag gives the same bytes), with a `<archive>.sha256` per archive and a `<name>.json` with the release metadata (site, version, tag, rc, commit, core, plugins, ym version, file hashes). Refuses commits without a release tag and dirty trees. Default output: `dist-artifacts/`. Nothing is uploaded: publishing is a CI job (design §15).
 - `[artifact]` in `site.toml`: `enabled`, `formats` (`tar.gz`, `zip`) and `name` (`{slug}`, `{version}`, `{tag}`).
+- `ym template update --data K=V` (repeatable): change a template answer, e.g. `--data ci_provider=gitlab` or `--data release_artifact=true` (passed to `copier update`).
 - `ym doctor`: sites with `[artifact] enabled = true` and no deploy targets are reported as artifact-only (ok, not a warning), and doctor warns when no CI file of the site's `ci_provider` runs `ym artifact build`.
+
+### Changed
+
+- `ym repo create`, `ym ci setup` and `ym ci status` refuse sites made with the template's `ci_provider = gitlab` and point to the site README's manual GitLab setup; `ym ci` also refuses `ci_provider = none`. `ym doctor` reports `ci = true` targets on GitLab sites as GitLab CI (not checked) and warns about them when the site has no CI.
 
 ### Removed
 

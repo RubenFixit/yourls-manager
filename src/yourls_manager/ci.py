@@ -225,7 +225,7 @@ def pick_targets(cfg: SiteConfig, names: list[str]) -> list[Plan]:
     plans = []
     for spec in specs:
         if spec.is_local:
-            raise UsageError(f"target {spec.name} has no host; GitHub Actions can't deploy it")
+            raise UsageError(f"target {spec.name} has no host; CI can't deploy it")
         plans.append(Plan(environment_for(spec.name), spec))
     by_env: dict[str, list[str]] = {}
     for p in plans:
@@ -334,8 +334,10 @@ def ci_setup(
     confirm: Confirm | None = None,
     gh: Gh | None = None,
 ) -> None:
+    from .github import require_github
     from .login import check_login
 
+    require_github(cfg, "ci setup")
     gh = gh or Gh(cwd=cfg.root)
     plans = pick_targets(cfg, targets)
     ensure_gh(gh, confirm=confirm)
@@ -437,6 +439,9 @@ def ci_check(cfg: SiteConfig, spec: TargetSpec, gh: Gh, repo: str) -> CiCheck:
 
 def ci_status(cfg: SiteConfig, targets: list[str], *, gh: Gh | None = None) -> bool:
     """Print the CI state of the targets (default: all with ci = true). True when ready."""
+    from .github import require_github
+
+    require_github(cfg, "ci status")
     gh = gh or Gh(cwd=cfg.root)
     specs = [cfg.target(n) for n in targets] if targets else [
         t for t in cfg.targets.values() if t.ci

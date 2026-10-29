@@ -18,6 +18,7 @@ from .conftest import (
     git_insteadof,
     needs_copier,
     new_site_args,
+    write_files,
 )
 
 
@@ -183,3 +184,25 @@ def test_copier_failure_reported(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(newsite, "copier_command", lambda: [str(script)])
     assert main(["new", str(tmp_path / "s"), "--defaults"]) == 1
     assert "copier failed (exit 3)" in capsys.readouterr().err
+
+
+def test_template_update_passes_data(tmp_path, monkeypatch, no_uv_lock, capsys):
+    site = tmp_path / "site"
+    write_files(site, {"site.toml": "", ".copier-answers.yml": "_src_path: x\n"})
+    git(site, "init", "-q")
+    git(site, "add", "-A")
+    git(site, "commit", "-q", "-m", "init")
+    log = tmp_path / "argv.txt"
+    script = tmp_path / "copier"
+    script.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{log}"\n')
+    script.chmod(0o755)
+    monkeypatch.setattr(newsite, "copier_command", lambda: [str(script)])
+    S = ["--site-dir", str(site), "template", "update"]
+    assert main([*S, "--data", "ci_provider", "--defaults"]) == 2
+    assert "--data expects KEY=VALUE" in capsys.readouterr().err
+    assert main([*S, "--manager-version", "v0.8.0", "--data", "ci_provider=gitlab",
+                 "--data", "release_artifact=true"]) == 0  # fmt: skip
+    argv = log.read_text().splitlines()
+    assert argv[:2] == ["update", "--skip-answered"]
+    pairs = [argv[i + 1] for i, a in enumerate(argv) if a == "--data"]
+    assert pairs == ["manager_version=v0.8.0", "ci_provider=gitlab", "release_artifact=true"]

@@ -107,7 +107,7 @@ class TargetSpec:
     url: str = ""
     state_dir: str = ""  # sftp only: manifest + release.json (design §10.3)
     accept: str = "any"  # deploy policy (design §11.5): "any" | "release"
-    ci: bool = False  # deployed by the site's GitHub Actions workflow (design §13)
+    ci: bool = False  # deployed by the site's CI (design §13, §15.4)
     given: frozenset[str] = frozenset()  # keys set explicitly in site.toml
 
     @property
@@ -176,6 +176,18 @@ class SiteConfig:
 
 
 # --------------------------------------------------------------------------- helpers
+
+ANSWERS_FILE = ".copier-answers.yml"
+CI_PROVIDERS = ("github", "gitlab", "none")
+_CI_PROVIDER_RE = re.compile(r"""^ci_provider:\s*['"]?([A-Za-z]+)""", re.MULTILINE)
+
+
+def ci_provider(root: Path) -> str:
+    """The template's ``ci_provider`` answer (design §15.4); sites from before it: github."""
+    answers = root / ANSWERS_FILE
+    text = answers.read_text(encoding="utf-8") if answers.is_file() else ""
+    m = _CI_PROVIDER_RE.search(text)
+    return m.group(1) if m else "github"
 
 
 def find_site_dir(start: Path | None = None) -> Path:
@@ -485,9 +497,7 @@ def _parse_target(name: str, raw: Any, site: SiteInfo, warnings: list[str]) -> T
         raise ConfigError(f"{prefix}.accept", f"must be 'any' or 'release', got {accept!r}")
     ci = r.bool("ci", False)
     if ci and host is None:
-        raise ConfigError(
-            f"{prefix}.ci", "needs a host (GitHub Actions can't deploy a local target)"
-        )
+        raise ConfigError(f"{prefix}.ci", "needs a host (CI can't deploy a local target)")
     state_dir = ""
     checked = [("path", path), ("config_file", config_file)]
     if ttype == "sftp":

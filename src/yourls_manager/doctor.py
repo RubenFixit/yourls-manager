@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from .config import SiteConfig, TargetSpec, find_site_dir, load_site
+from .config import SiteConfig, TargetSpec, ci_provider, find_site_dir, load_site
 from .util import YMError, console, run
 
 OK, WARN, FAIL = "ok", "warn", "fail"
@@ -164,15 +163,6 @@ def check_site(rep: Report, start: Path | None) -> SiteConfig | None:
 
 
 CI_FILES = {"github": ".github/workflows/*.y*ml", "gitlab": ".gitlab-ci.yml"}
-_CI_PROVIDER_RE = re.compile(r"""^ci_provider:\s*['"]?([A-Za-z]+)""", re.MULTILINE)
-
-
-def ci_provider(root: Path) -> str:
-    """The template's ``ci_provider`` answer (design §15.4); sites from before it: github."""
-    answers = root / ".copier-answers.yml"
-    text = answers.read_text(encoding="utf-8") if answers.is_file() else ""
-    m = _CI_PROVIDER_RE.search(text)
-    return m.group(1) if m else "github"
 
 
 def check_artifact(rep: Report, cfg: SiteConfig) -> None:
@@ -331,6 +321,15 @@ def _ci_checks(rep: Report, cfg: SiteConfig, spec: TargetSpec, github: dict) -> 
     """Only for targets with ci = true: the GitHub side of the deploy workflow."""
     from .ci import ci_check, environment_for
     from .github import Gh, current_repo, gh_logged_in
+
+    provider = ci_provider(cfg.root)
+    if provider == "gitlab":
+        rep.add(OK, "ci", "GitLab CI (ym doesn't check its environments and variables)")
+        return
+    if provider != "github":
+        rep.add(WARN, "ci", f"ci = true, but ci_provider = {provider!r}: nothing deploys it",
+                "ym template update --data ci_provider=github (or gitlab)")  # fmt: skip
+        return
 
     if "repo" not in github:
         gh = Gh(cwd=cfg.root)
