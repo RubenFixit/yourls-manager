@@ -1,8 +1,6 @@
 # yourls-manager
 
-`yourls-manager` (alias `ym`) keeps a whole [YOURLS](https://yourls.org) site in its own Git
-repository and deploys it with one command. YOURLS core and plugins are vendored at locked
-commits, your own files live in an overlay, and secrets stay on the server.
+`yourls-manager` (alias `ym`) keeps a whole [YOURLS](https://yourls.org) site in its own Git repository and deploys it with one command. YOURLS core and plugins are vendored at locked commits, your own files live in an overlay, and secrets stay on the server.
 
 ## Quick start
 
@@ -11,24 +9,15 @@ commits, your own files live in an overlay, and secrets stay on the server.
 On the machine you run `ym` from:
 
 - **git**
-- **[uv](https://docs.astral.sh/uv/getting-started/installation/)** (it installs Python and
-  the tool for you)
-- **rsync** and **ssh** to deploy to `rsync` targets. Use Linux, macOS, WSL or CI (GitHub
-  Actions). rsync isn't native on Windows, so use WSL there. `sftp` targets need neither:
-  ym speaks SFTP itself.
+- **[uv](https://docs.astral.sh/uv/getting-started/installation/)** (it installs Python and the tool for you)
+- **rsync** and **ssh** to deploy to `rsync` targets. Use Linux, macOS, WSL or CI (GitHub Actions). rsync isn't native on Windows, so use WSL there. `sftp` targets need neither: ym speaks SFTP itself.
 
 On the server, one of:
 
-- **Shell access (`rsync` target, recommended):** **PHP ≥ 8.1** with the CLI, plus
-  `mysqldump` and `gzip`; SSH access with **key authentication** (`ym` runs ssh
-  non-interactively and never answers password prompts; `ym target login prod` or the wizard
-  creates and installs a key for you).
-- **SFTP only (`sftp` target):** for hosts without shell access. See
-  [SFTP targets](#sftp-targets) for what changes (no DB backup; install/upgrade and
-  plugin activation happen in the browser).
+- **Shell access (`rsync` target, recommended):** **PHP ≥ 8.1** with the CLI, plus `mysqldump` and `gzip`; SSH access with **key authentication** (`ym` runs ssh non-interactively and never answers password prompts; `ym target login prod` or the wizard creates and installs a key for you).
+- **SFTP only (`sftp` target):** for hosts without shell access. See [SFTP targets](#sftp-targets) for what changes (no DB backup; install/upgrade and plugin activation happen in the browser).
 
-Either way: **MySQL or MariaDB**, with a database and user for YOURLS, and PHP ≥ 8.1 for the
-web server.
+Either way: **MySQL or MariaDB**, with a database and user for YOURLS, and PHP ≥ 8.1 for the web server.
 
 ### 2. Install the tool
 
@@ -58,28 +47,19 @@ ym deploy prod --dry-run            # build and show what rsync would change
 ym deploy prod                      # deploy for real
 ```
 
-On the first deploy to an empty database, `ym` uploads the files and then asks you to open
-`https://<your site>/admin/install.php` once to create the tables. After that:
+On the first deploy to an empty database, `ym` uploads the files and then asks you to open `https://<your site>/admin/install.php` once to create the tables. After that:
 
 ```sh
 ym plugin apply prod                # activate the plugins marked active in site.toml
 ```
 
-Only SFTP on your host? Answer `sftp` to the deploy type question. `ym target login`,
-`ym target config` and `ym deploy` then work over SFTP; activate the plugins in
-`https://<your site>/admin/plugins.php` instead of `ym plugin apply` (every deploy lists them). See
-[SFTP targets](#sftp-targets).
+Only SFTP on your host? Answer `sftp` to the deploy type question. `ym target login`, `ym target config` and `ym deploy` then work over SFTP; activate the plugins in `https://<your site>/admin/plugins.php` instead of `ym plugin apply` (every deploy lists them). See [SFTP targets](#sftp-targets).
 
-If you leave the deploy host empty when `ym new` asks, the `prod` target is written to
-`site.toml` commented out. Add it with `ym target add prod` (it asks for host, user and
-web root) before `ym target config prod`. `ym target list` shows the targets.
+If you leave the deploy host empty when `ym new` asks, the `prod` target is written to `site.toml` commented out. Add it with `ym target add prod` (it asks for host, user and web root) before `ym target config prod`. `ym target list` shows the targets.
 
 ### 3B. Adopt and update an existing YOURLS install
 
-`ym adopt` takes a YOURLS install that is already running and puts it under management
-without changing what's served. It finds the core version, copies your changed and extra
-files into `overlay/` and your plugins into `overlay/user/plugins/`, and checks that a build
-matches the live site.
+`ym adopt` takes a YOURLS install that is already running and puts it under management without changing what's served. It finds the core version, copies your changed and extra files into `overlay/` and your plugins into `overlay/user/plugins/`, and checks that a build matches the live site.
 
 Wizard:
 
@@ -101,9 +81,7 @@ ym deploy prod                      # parity deploy: same code the site runs tod
 git add -A && git commit -m "Adopt existing install"
 ```
 
-The first deploy should change nothing that matters. Only the template's own files differ:
-`.htaccess`, `health.php`, the `user/config.php` shim and the `site-branding` plugin. Merge
-anything listed under `adopt-review/` before you deploy. Then update:
+The first deploy should change nothing that matters. Only the template's own files differ: `.htaccess`, `health.php`, the `user/config.php` shim and the `site-branding` plugin. Merge anything listed under `adopt-review/` before you deploy. Then update:
 
 ```sh
 ym update --check                   # what has updates (exit code 10 = updates available)
@@ -113,47 +91,28 @@ ym deploy prod                      # backs up the DB, deploys, runs the DB upgr
 
 `ym adopt --from-dir PATH` works on a local copy of the web root instead of a target.
 
-For an **sftp** target, ym can't read which plugins are active (there's no PHP CLI), so give
-them: `ym adopt --from-target prod --active plugin-a,plugin-b` (on a terminal it asks per
-plugin otherwise). After the adopt it records the install's files on the server, so the first
-`ym deploy prod` only uploads the template's files. You do the DB upgrade after
-`ym core latest` in the browser (`ym deploy` prints the link). Back up the database
-with your host's tools first.
+For an **sftp** target, ym can't read which plugins are active (there's no PHP CLI), so give them: `ym adopt --from-target prod --active plugin-a,plugin-b` (on a terminal it asks per plugin otherwise). After the adopt it records the install's files on the server, so the first `ym deploy prod` only uploads the template's files. You do the DB upgrade after `ym core latest` in the browser (`ym deploy` prints the link). Back up the database with your host's tools first.
 
 ### DreamHost notes
 
-- **SSH user:** in the panel, give the site's user *SSH* (shell) access. Then run
-  `ym target login prod`: it creates a key if you have none, installs it with `ssh-copy-id`
-  (asking for the SSH password once and to trust the host key) and checks that key login works.
-- **PHP CLI:** plain `php` is often older than the site's PHP. Set the target's `php` to a
-  versioned binary such as `/usr/local/php83/bin/php` (or `php82`, `php84`, ...).
-- **Web root:** the domain directory in your home, e.g. `path = "go.example.com"`. The server
-  config then goes to `~/yourls-config/<slug>.php` and backups to
-  `~/yourls-backups/<slug>/`, both outside the web root.
-- **Database host:** use the MySQL hostname you created in the panel (e.g.
-  `mysql.example.com`), e.g. `ym target config prod --db-host mysql.example.com`.
+- **SSH user:** in the panel, give the site's user *SSH* (shell) access. Then run `ym target login prod`: it creates a key if you have none, installs it with `ssh-copy-id` (asking for the SSH password once and to trust the host key) and checks that key login works.
+- **PHP CLI:** plain `php` is often older than the site's PHP. Set the target's `php` to a versioned binary such as `/usr/local/php83/bin/php` (or `php82`, `php84`, ...).
+- **Web root:** the domain directory in your home, e.g. `path = "go.example.com"`. The server config then goes to `~/yourls-config/<slug>.php` and backups to `~/yourls-backups/<slug>/`, both outside the web root.
+- **Database host:** use the MySQL hostname you created in the panel (e.g. `mysql.example.com`), e.g. `ym target config prod --db-host mysql.example.com`.
 
 ### Store the site on GitHub
 
-Git is the record of the site, so a remote is optional: deploys run from your machine either
-way. To keep it on GitHub, with the [GitHub CLI](https://cli.github.com) (`gh`) installed:
+Git is the record of the site, so a remote is optional: deploys run from your machine either way. To keep it on GitHub, with the [GitHub CLI](https://cli.github.com) (`gh`) installed:
 
 ```sh
 ym repo create                      # private, named after the site directory; --name, --owner, --public
 ```
 
-It creates the repository, adds it as `origin` (or creates the one `origin` already names)
-and pushes the current branch. Tags are not pushed; `git push --tags` when you want them.
-Nothing about deploying changes. By hand: create an empty repository on GitHub (no README or
-license), then `git remote add origin git@github.com:<you>/my-site.git && git push -u origin main`.
+It creates the repository, adds it as `origin` (or creates the one `origin` already names) and pushes the current branch. Tags are not pushed; `git push --tags` when you want them. Nothing about deploying changes. By hand: create an empty repository on GitHub (no README or license), then `git remote add origin git@github.com:<you>/my-site.git && git push -u origin main`.
 
 ### Deploy from GitHub Actions (optional)
 
-The site repo's `.github/workflows/deploy.yml` deploys targets that have `ci = true` in
-site.toml: final release tags go to `prod`, `-rc.<n>` tags to `staging`, or run it by hand
-for any target. Targets without `ci = true` are skipped, so a site you deploy by hand never
-gets failed workflow runs. `prod` runs in the `production` environment, every other target in
-`staging`; each environment needs two secrets. Let ym set it up:
+The site repo's `.github/workflows/deploy.yml` deploys targets that have `ci = true` in site.toml: final release tags go to `prod`, `-rc.<n>` tags to `staging`, or run it by hand for any target. Targets without `ci = true` are skipped, so a site you deploy by hand never gets failed workflow runs. `prod` runs in the `production` environment, every other target in `staging`; each environment needs two secrets. Let ym set it up:
 
 ```sh
 ym ci setup                         # prod and staging; offers `gh auth login` and `ym repo create`
@@ -161,13 +120,7 @@ git commit -m "Deploy from GitHub Actions" site.toml && git push
 ym ci status                        # environments and secrets of the ci = true targets
 ```
 
-`ym ci setup` creates the environment if needed, generates a dedicated CI key (ed25519, no
-passphrase), installs its public half on the server over your working login (ssh, or SFTP for
-`sftp` targets), checks that it logs in, and stores the private half only in
-`DEPLOY_SSH_KEY`. The host keys come from your `~/.ssh/known_hosts` (else `ssh-keyscan`, with
-the fingerprints to confirm). Last, it sets `ci = true` on the target; commit that, since the
-workflow reads it from the commit it deploys. Run it again any time: it keeps the key
-(`--rotate` replaces it) and refreshes the host keys; `--dry-run` shows what it would do.
+`ym ci setup` creates the environment if needed, generates a dedicated CI key (ed25519, no passphrase), installs its public half on the server over your working login (ssh, or SFTP for `sftp` targets), checks that it logs in, and stores the private half only in `DEPLOY_SSH_KEY`. The host keys come from your `~/.ssh/known_hosts` (else `ssh-keyscan`, with the fingerprints to confirm). Last, it sets `ci = true` on the target; commit that, since the workflow reads it from the commit it deploys. Run it again any time: it keeps the key (`--rotate` replaces it) and refreshes the host keys; `--dry-run` shows what it would do.
 
 Or by hand: set `ci = true` on the target, and under Settings → Environments → production:
 
@@ -176,19 +129,15 @@ Or by hand: set `ci = true` on the target, and under Settings → Environments �
 | `DEPLOY_SSH_KEY` | private key (ed25519) whose public half is in `~/.ssh/authorized_keys` on the host |
 | `DEPLOY_KNOWN_HOSTS` | output of `ssh-keyscan -p <port> <host>` (check the fingerprint) |
 
-`.github/workflows/check-updates.yml` runs `ym update --check` every week and opens a pull request
-when there are updates. For that, enable *Allow GitHub Actions to create and approve pull
-requests* under Settings → Actions → General.
+`.github/workflows/check-updates.yml` runs `ym update --check` every week and opens a pull request when there are updates. For that, enable *Allow GitHub Actions to create and approve pull requests* under Settings → Actions → General.
 
 ## Updating an existing install
 
 **Routine updates** (the weekly `check-updates` pull request does steps 1 and 2 for you):
 
 1. `ym update --check`: see what's new upstream.
-2. `ym update`: vendor the new versions and build (`--core-only` / `--plugins-only`; the
-   lower-level `ym core latest` and `ym plugin sync --update` do one part each).
-3. Review `git diff` (especially `yourls/` and `yourls.lock.json`) and commit (or use
-   `ym update --commit`).
+2. `ym update`: vendor the new versions and build (`--core-only` / `--plugins-only`; the lower-level `ym core latest` and `ym plugin sync --update` do one part each).
+3. Review `git diff` (especially `yourls/` and `yourls.lock.json`) and commit (or use `ym update --commit`).
 4. `ym deploy prod --dry-run`, then `ym deploy prod`. Or push a `v*` tag and let CI deploy.
 
 Each deploy dumps the database to `backup_dir` before it changes anything.
@@ -199,9 +148,7 @@ Each deploy dumps the database to `backup_dir` before it changes anything.
 git checkout v<previous> && ym deploy prod
 ```
 
-If the database has to go back too, restore the dump taken before the bad deploy from
-`backup_dir` on the server (default `<parent of web root>/yourls-backups/<slug>/`):
-`gunzip -c <dump>.sql.gz | mysql --defaults-extra-file=<credentials file> <db>`.
+If the database has to go back too, restore the dump taken before the bad deploy from `backup_dir` on the server (default `<parent of web root>/yourls-backups/<slug>/`): `gunzip -c <dump>.sql.gz | mysql --defaults-extra-file=<credentials file> <db>`.
 
 **Template updates** (workflows, config shim, `.htaccess`, ...): with a clean Git tree, run
 
@@ -210,19 +157,13 @@ ym template update                  # pull the latest yourls-site-template chang
 ym template update --manager-version v0.7.0 # also bump the yourls-manager pin in pyproject.toml
 ```
 
-then review the diff and commit. Files you own (`site.toml`, `tests/redirects.toml`, branding
-assets) are never touched.
+then review the diff and commit. Files you own (`site.toml`, `tests/redirects.toml`, branding assets) are never touched.
 
-**Tool updates:** `uv tool upgrade yourls-manager` updates the `ym` on your PATH. The site's
-CI uses the version pinned in the site's `pyproject.toml`. Bump that pin with
-`ym template update --manager-version vX.Y.Z`.
+**Tool updates:** `uv tool upgrade yourls-manager` updates the `ym` on your PATH. The site's CI uses the version pinned in the site's `pyproject.toml`. Bump that pin with `ym template update --manager-version vX.Y.Z`.
 
 ## Releases and deploy policy
 
-**Tags.** A release is `v<YOURLS version>-<revision>`: `v1.10.6-1`, `v1.10.6-2`, ... The
-revision counts releases of this site and restarts at 1 when YOURLS changes (`v1.11.0-1`).
-Release candidates add `-rc.<n>`: `v1.10.6-3-rc.1`. `ym release` works out the next tag from
-the locked YOURLS version and the existing tags, so several releases a day are fine.
+**Tags.** A release is `v<YOURLS version>-<revision>`: `v1.10.6-1`, `v1.10.6-2`, ... The revision counts releases of this site and restarts at 1 when YOURLS changes (`v1.11.0-1`). Release candidates add `-rc.<n>`: `v1.10.6-3-rc.1`. `ym release` works out the next tag from the locked YOURLS version and the existing tags, so several releases a day are fine.
 
 ```sh
 ym release --dry-run                # show the next tag and its notes
@@ -232,8 +173,7 @@ ym release --push                   # or tag the next final release straight awa
 ym release list                     # releases, dates, and where each is deployed
 ```
 
-The annotated tag carries release notes: YOURLS and plugin changes since the previous final
-release (from `yourls.lock.json`), your `-m` text and the commit subjects.
+The annotated tag carries release notes: YOURLS and plugin changes since the previous final release (from `yourls.lock.json`), your `-m` text and the commit subjects.
 
 **Deploy policy.** Each target has `accept = "any"` (default) or `"release"`:
 
@@ -243,53 +183,33 @@ release (from `yourls.lock.json`), your `-m` text and the commit subjects.
 | Final release tag at HEAD | deploys | deploys |
 | Uncommitted changes | refused unless `--allow-dirty` | refused (`--force` overrides) |
 
-The template sets `accept = "release"` on prod. Overrides are recorded in the server's
-`release.json` (`forced`, `git_dirty`, `tag`), and ym warns when HEAD isn't pushed yet.
+The template sets `accept = "release"` on prod. Overrides are recorded in the server's `release.json` (`forced`, `git_dirty`, `tag`), and ym warns when HEAD isn't pushed yet.
 
-**Deployment markers.** Deployments aren't tagged (they aren't versions). After each
-deploy of a clean tree ym moves the local branch `deployed/<target>` to the deployed commit,
-so `git log --decorate` shows what's live where. Set `[release] push_markers = true` in
-site.toml to push it as well.
+**Deployment markers.** Deployments aren't tagged (they aren't versions). After each deploy of a clean tree ym moves the local branch `deployed/<target>` to the deployed commit, so `git log --decorate` shows what's live where. Set `[release] push_markers = true` in site.toml to push it as well.
 
-**CI.** The template's deploy workflow deploys final tags to `prod` and `-rc.<n>` tags to
-`staging` (skipped when site.toml has no staging target). The policy is enforced by
-`ym deploy` itself, so manual workflow runs can't bypass it.
+**CI.** The template's deploy workflow deploys final tags to `prod` and `-rc.<n>` tags to `staging` (skipped when site.toml has no staging target). The policy is enforced by `ym deploy` itself, so manual workflow runs can't bypass it.
 
 ## Setup wizard
 
-`ym init` is an interactive front end to the commands above. It needs a terminal (without
-one it exits with code 2). It:
+`ym init` is an interactive front end to the commands above. It needs a terminal (without one it exits with code 2). It:
 
-1. asks whether you're creating a **new site** or **adopting** an existing install, and
-   where to put the site repo;
-2. runs `ym new` (the template asks its questions; when adopting it passes
-   `--data include_example_plugins=false`);
-3. offers `ym target add prod` when site.toml has no `prod` target, then checks the login
-   to it and, if that fails, offers `ym target login prod`;
-4. when adopting, asks for the source (the `prod` target if one is configured, or a local
-   path) and runs `ym adopt`;
-5. offers `ym target config prod` (with `--from-existing` when adopting and the server-local
-   config doesn't exist yet);
+1. asks whether you're creating a **new site** or **adopting** an existing install, and where to put the site repo;
+2. runs `ym new` (the template asks its questions; when adopting it passes `--data include_example_plugins=false`);
+3. offers `ym target add prod` when site.toml has no `prod` target, then checks the login to it and, if that fails, offers `ym target login prod`;
+4. when adopting, asks for the source (the `prod` target if one is configured, or a local path) and runs `ym adopt`;
+5. offers `ym target config prod` (with `--from-existing` when adopting and the server-local config doesn't exist yet);
 6. offers `ym deploy prod --dry-run`;
 7. prints a summary of what it did and what's left to do.
 
-Before each step it prints the equivalent command, so you can repeat or script the flow
-without the wizard.
+Before each step it prints the equivalent command, so you can repeat or script the flow without the wizard.
 
-**Resuming.** Progress is saved in the site repo (`.git/ym-init.json`, never committed) and
-the last unfinished site is remembered in `~/.local/state/yourls-manager/init.json`
-(`$XDG_STATE_HOME` is honored). If a step fails or you stop early, fix the problem and run
-`ym init` again from anywhere: it offers to resume and skips what's already done (the repo,
-a finished adoption; an existing server config is detected on the server). `ym init DIR`
-resumes a specific site repo, including one you created with `ym new` by hand.
+**Resuming.** Progress is saved in the site repo (`.git/ym-init.json`, never committed) and the last unfinished site is remembered in `~/.local/state/yourls-manager/init.json` (`$XDG_STATE_HOME` is honored). If a step fails or you stop early, fix the problem and run `ym init` again from anywhere: it offers to resume and skips what's already done (the repo, a finished adoption; an existing server config is detected on the server). `ym init DIR` resumes a specific site repo, including one you created with `ym new` by hand.
 
 ## Commands
 
-Global options: `--site-dir PATH` (default: search upward from the current directory for
-`site.toml`), `-v/--verbose`, `--version`.
+Global options: `--site-dir PATH` (default: search upward from the current directory for `site.toml`), `-v/--verbose`, `--version`.
 
-Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates available
-(`update --check` and `plugin list --check`).
+Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates available (`update --check` and `plugin list --check`).
 
 ### Onboarding
 
@@ -351,8 +271,7 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 
 ### Renamed in 0.7
 
-The old spellings still work in 0.7: they print a warning with the new command and are
-hidden from `ym --help`. They will be removed in 0.8.
+The old spellings still work in 0.7: they print a warning with the new command and are hidden from `ym --help`. They will be removed in 0.8.
 
 | Before 0.7 | Now |
 |---|---|
@@ -368,41 +287,19 @@ hidden from `ym --help`. They will be removed in 0.8.
 | `ym template-update` | `ym template update` |
 | `ym release --promote` / `--list` | `ym release promote` / `ym release list` |
 
-`ym core` and `ym plugin sync` won't overwrite vendored files that have uncommitted Git changes,
-because Git is your backup. Commit first or pass `--force`.
+`ym core` and `ym plugin sync` won't overwrite vendored files that have uncommitted Git changes, because Git is your backup. Commit first or pass `--force`.
 
-`ym new`, `ym init` and `ym template update` run Copier as `uvx copier`, or as `copier` if
-uv isn't on your PATH.
+`ym new`, `ym init` and `ym template update` run Copier as `uvx copier`, or as `copier` if uv isn't on your PATH.
 
 ### `ym adopt`
 
-1. **Snapshot.** `--from-target` rsyncs the target's web root into a temp dir (read-only on
-   the server) and asks the PHP helper for the YOURLS version and the active plugins. For
-   `sftp` targets it downloads the web root over SFTP (ignore patterns are applied while
-   walking, symlinks are skipped); the active plugins come from `--active`, or a per-plugin
-   question on a terminal. `--from-dir` uses a local directory.
-2. **Version.** Reads `includes/version.php`, finds the matching upstream tag, writes it to
-   `[core].version` and vendors it.
-3. **Diff against pristine core.** Files that match upstream are left alone. Modified or
-   added files are copied into `overlay/` at the same path. If the template already owns
-   that path (`.htaccess`, `health.php`, `user/config.php`, `site-branding`), the file goes to
-   `adopt-review/<path>` for you to merge by hand instead. Upstream files missing from the
-   site are only reported. The config files are skipped, and so are these defaults plus
-   anything you add with `--ignore`: `.well-known/**`, `**/error_log`, `**/*.log`,
-   `**/.DS_Store`, `**/Thumbs.db`, `.git/**`.
-4. **Plugins.** An unmodified plugin that ships with core gets a `[[plugins]]` entry without
-   `repo`. Any other plugin is copied as-is into `overlay/user/plugins/<name>/` and gets an
-   entry without `repo`, with its `Plugin URI` in a comment so you can switch to a managed
-   `repo =` later. The `active` flags come from the live site. With `--from-dir` and no local
-   PHP and config, every plugin is written `active = true` with a `# TODO verify` comment.
-   Check those flags, because a deploy makes the active set exactly what `site.toml` says.
-5. **Parity check.** Builds `dist/` and compares it to the snapshot. It prints how many
-   files a deploy would add, change or delete (`-v` lists them).
-6. **Report.** Writes `adopt-review/REPORT.md`. `adopt-review/` is never deployed and is
-   safe to commit or delete.
-7. **Manifest** (`sftp` targets only). Uploads the list of the install's files and their
-   hashes to `<state_dir>/manifest.json`, so the first deploy only sends real differences and
-   may delete files that belonged to the old install (never ignored or `protect`ed ones).
+1. **Snapshot.** `--from-target` rsyncs the target's web root into a temp dir (read-only on the server) and asks the PHP helper for the YOURLS version and the active plugins. For `sftp` targets it downloads the web root over SFTP (ignore patterns are applied while walking, symlinks are skipped); the active plugins come from `--active`, or a per-plugin question on a terminal. `--from-dir` uses a local directory.
+2. **Version.** Reads `includes/version.php`, finds the matching upstream tag, writes it to `[core].version` and vendors it.
+3. **Diff against pristine core.** Files that match upstream are left alone. Modified or added files are copied into `overlay/` at the same path. If the template already owns that path (`.htaccess`, `health.php`, `user/config.php`, `site-branding`), the file goes to `adopt-review/<path>` for you to merge by hand instead. Upstream files missing from the site are only reported. The config files are skipped, and so are these defaults plus anything you add with `--ignore`: `.well-known/**`, `**/error_log`, `**/*.log`, `**/.DS_Store`, `**/Thumbs.db`, `.git/**`.
+4. **Plugins.** An unmodified plugin that ships with core gets a `[[plugins]]` entry without `repo`. Any other plugin is copied as-is into `overlay/user/plugins/<name>/` and gets an entry without `repo`, with its `Plugin URI` in a comment so you can switch to a managed `repo =` later. The `active` flags come from the live site. With `--from-dir` and no local PHP and config, every plugin is written `active = true` with a `# TODO verify` comment. Check those flags, because a deploy makes the active set exactly what `site.toml` says.
+5. **Parity check.** Builds `dist/` and compares it to the snapshot. It prints how many files a deploy would add, change or delete (`-v` lists them).
+6. **Report.** Writes `adopt-review/REPORT.md`. `adopt-review/` is never deployed and is safe to commit or delete.
+7. **Manifest** (`sftp` targets only). Uploads the list of the install's files and their hashes to `<state_dir>/manifest.json`, so the first deploy only sends real differences and may delete files that belonged to the old install (never ignored or `protect`ed ones).
 
 `--dry-run` prints the plan and writes nothing.
 
@@ -423,24 +320,16 @@ location = "https://docs.example.com/*"   # trailing * = prefix match
 
 ### What a deploy does
 
-For `type = "rsync"` (for `type = "sftp"` see [SFTP targets](#sftp-targets)), commands run as `ssh -p PORT user@host -- <cmd>`. If you omit `host`,
-the same commands run on the local machine. Each step:
+For `type = "rsync"` (for `type = "sftp"` see [SFTP targets](#sftp-targets)), commands run as `ssh -p PORT user@host -- <cmd>`. If you omit `host`, the same commands run on the local machine. Each step:
 
 1. **build** (skipped with `--no-build`)
-2. **preflight**: ssh works with key auth (`BatchMode`), PHP CLI is ≥ 8.1, rsync is present,
-   and `config_file` exists. If the config file is missing, `ym` points you to
-   `ym target config` and exits with code 2.
-3. **upload helper**: `ym-helper.php` goes to `~/.yourls-manager/ym-helper-<version>.php`,
-   outside the web root.
-4. **backup**: `mysqldump --single-transaction | gzip` into `backup_dir`, keeping the newest
-   `backup_keep` dumps. This is skipped automatically when the database has no tables yet.
-5. **rsync**: `rsync -az --delete --delay-updates` of `dist/` into the web root. Paths listed in
-   `protect` are never deleted.
+2. **preflight**: ssh works with key auth (`BatchMode`), PHP CLI is ≥ 8.1, rsync is present, and `config_file` exists. If the config file is missing, `ym` points you to `ym target config` and exits with code 2.
+3. **upload helper**: `ym-helper.php` goes to `~/.yourls-manager/ym-helper-<version>.php`, outside the web root.
+4. **backup**: `mysqldump --single-transaction | gzip` into `backup_dir`, keeping the newest `backup_keep` dumps. This is skipped automatically when the database has no tables yet.
+5. **rsync**: `rsync -az --delete --delay-updates` of `dist/` into the web root. Paths listed in `protect` are never deleted.
 6. **db upgrade**: runs YOURLS' own upgrade routine, and does nothing if no upgrade is needed.
-7. **plugins**: activates and deactivates plugins until the active set is exactly the
-   `site.toml` set.
-8. **record**: writes `~/.yourls-manager/<slug>/release.json` (git commit, dirty flag, tool
-   version, lock sha256, core version, time), outside the web root.
+7. **plugins**: activates and deactivates plugins until the active set is exactly the `site.toml` set.
+8. **record**: writes `~/.yourls-manager/<slug>/release.json` (git commit, dirty flag, tool version, lock sha256, core version, time), outside the web root.
 9. **verify** (skipped with `--skip-verify`).
 
 ## SFTP targets
@@ -460,74 +349,37 @@ protect = [".well-known/"]
 url     = "https://go.example.com"
 ```
 
-`php`, `backup_dir` and `backup_keep` don't apply (ym warns if you set them). `ym new` writes
-this block when you answer `sftp` to the deploy type question.
+`php`, `backup_dir` and `backup_keep` don't apply (ym warns if you set them). `ym new` writes this block when you answer `sftp` to the deploy type question.
 
-**Requirements.** SFTP access to the web root and to its parent directory (for the
-server-local config and `state_dir`, both outside the web root). Nothing else on the server:
-ym uses [paramiko](https://www.paramiko.org/) and needs no shell, so SFTP-only and chrooted
-accounts work.
+**Requirements.** SFTP access to the web root and to its parent directory (for the server-local config and `state_dir`, both outside the web root). Nothing else on the server: ym uses [paramiko](https://www.paramiko.org/) and needs no shell, so SFTP-only and chrooted accounts work.
 
-**Login.** `~/.ssh/config` is honored for the host (`HostName`, `Port`, `User`,
-`IdentityFile`) unless the target sets them. ym tries ssh-agent, then your key files, then a
-password: from `YM_<TARGET>_PASSWORD` (target name upper-cased, other characters as `_`, e.g.
-`YM_PROD_PASSWORD`) or, on a terminal, one prompt per command. ym never stores passwords.
-`ym target login prod` installs a key over SFTP so you don't need the password afterwards.
+**Login.** `~/.ssh/config` is honored for the host (`HostName`, `Port`, `User`, `IdentityFile`) unless the target sets them. ym tries ssh-agent, then your key files, then a password: from `YM_<TARGET>_PASSWORD` (target name upper-cased, other characters as `_`, e.g. `YM_PROD_PASSWORD`) or, on a terminal, one prompt per command. ym never stores passwords. `ym target login prod` installs a key over SFTP so you don't need the password afterwards.
 
-**Host keys** are checked against `~/.ssh/known_hosts`. On a terminal, ym shows an unknown
-host's SHA256 fingerprint and asks before adding it; without a terminal (CI) it fails and
-tells you to add it (`ssh-keyscan -p PORT HOST >> ~/.ssh/known_hosts`, after checking the
-fingerprint). A changed host key always fails.
+**Host keys** are checked against `~/.ssh/known_hosts`. On a terminal, ym shows an unknown host's SHA256 fingerprint and asks before adding it; without a terminal (CI) it fails and tells you to add it (`ssh-keyscan -p PORT HOST >> ~/.ssh/known_hosts`, after checking the fingerprint). A changed host key always fails.
 
 **What a deploy does.**
 
-1. **build** (skipped with `--no-build`), connect, **preflight**: the web root is reachable
-   (created if missing) and `config_file` exists (else: run `ym target config prod`).
-2. **plan**: ym compares `dist/` with `<state_dir>/manifest.json`, the list of files (with
-   sha256 and size) it deployed last time. New and changed files are uploaded; files in the
-   manifest that are no longer in `dist/` are deleted, unless `protect`ed.
+1. **build** (skipped with `--no-build`), connect, **preflight**: the web root is reachable (created if missing) and `config_file` exists (else: run `ym target config prod`).
+2. **plan**: ym compares `dist/` with `<state_dir>/manifest.json`, the list of files (with sha256 and size) it deployed last time. New and changed files are uploaded; files in the manifest that are no longer in `dist/` are deleted, unless `protect`ed.
 3. `--dry-run` prints the plan (counts; file lists with `-v`) and stops.
-4. **upload**: each file is written as `.<name>.ym-tmp` and renamed into place, so visitors
-   never see half a file. `.htaccess`, `user/config.php` and `yourls-loader.php` go last.
-   Then the deletes, then directories that became empty. `manifest.json` and `release.json`
-   (0600) are written to `state_dir`.
-5. **YOURLS state over HTTP**: ym requests `<url>/` without following redirects (it steps
-   through same-site redirects one by one). A redirect to `admin/install.php` or
-   `admin/upgrade.php` means you have to open that page. ym prints the link.
-6. **plugins**: ym prints the plugins `site.toml` marks active and the link to
-   `admin/plugins.php`. It can't check or change activation without PHP on the server.
-7. **verify** (skipped with `--skip-verify`). While an install or upgrade is pending it is
-   skipped too, and the deploy still succeeds: finish the step in the browser, then run
-   `ym verify TARGET`.
+4. **upload**: each file is written as `.<name>.ym-tmp` and renamed into place, so visitors never see half a file. `.htaccess`, `user/config.php` and `yourls-loader.php` go last. Then the deletes, then directories that became empty. `manifest.json` and `release.json` (0600) are written to `state_dir`.
+5. **YOURLS state over HTTP**: ym requests `<url>/` without following redirects (it steps through same-site redirects one by one). A redirect to `admin/install.php` or `admin/upgrade.php` means you have to open that page. ym prints the link.
+6. **plugins**: ym prints the plugins `site.toml` marks active and the link to `admin/plugins.php`. It can't check or change activation without PHP on the server.
+7. **verify** (skipped with `--skip-verify`). While an install or upgrade is pending it is skipped too, and the deploy still succeeds: finish the step in the browser, then run `ym verify TARGET`.
 
-**How deletes differ from rsync.** rsync `--delete` makes the web root an exact copy of
-`dist/` and removes anything else that isn't `protect`ed. An sftp deploy only deletes files
-that ym itself deployed (or that `ym adopt` recorded). Files you uploaded by hand, logs and
-caches stay. The first deploy without a manifest uploads everything and deletes nothing (ym
-says so). The manifest can't see edits made on the server: `ym deploy prod --verify-remote`
-checks the size of every deployed file and uploads the ones someone changed again. A file
-that was changed on the server and then removed from the build is left in place with a
-warning.
+**How deletes differ from rsync.** rsync `--delete` makes the web root an exact copy of `dist/` and removes anything else that isn't `protect`ed. An sftp deploy only deletes files that ym itself deployed (or that `ym adopt` recorded). Files you uploaded by hand, logs and caches stay. The first deploy without a manifest uploads everything and deletes nothing (ym says so). The manifest can't see edits made on the server: `ym deploy prod --verify-remote` checks the size of every deployed file and uploads the ones someone changed again. A file that was changed on the server and then removed from the build is left in place with a warning.
 
 **Manual admin steps** (ym prints them after every deploy, `ym init` lists them too):
 
 - new site: open `<url>/admin/install.php` once to create the tables;
-- after a core update: open `<url>/admin/upgrade.php` and run the upgrade (back up the
-  database first);
-- plugins: in `<url>/admin/plugins.php`, make exactly the `active = true` plugins from
-  `site.toml` active.
+- after a core update: open `<url>/admin/upgrade.php` and run the upgrade (back up the database first);
+- plugins: in `<url>/admin/plugins.php`, make exactly the `active = true` plugins from `site.toml` active.
 
-**No database backup.** Without a shell there's no `mysqldump`, so sftp deploys don't back
-up the database (`--skip-backup` is accepted and ignored). Use your host's backup tool,
-especially before a core update.
+**No database backup.** Without a shell there's no `mysqldump`, so sftp deploys don't back up the database (`--skip-backup` is accepted and ignored). Use your host's backup tool, especially before a core update.
 
-**`ym target config`** writes the config over SFTP (mode 0600; `--force` keeps a 0600
-`.bak-<UTC>` copy). The admin password is hashed locally with bcrypt (cost 10) in the format
-YOURLS expects (`phpass:` + `$2y$` hash with `$` written as `!`). `--from-existing` downloads
-the live `user/config.php` and uploads it to `config_file`.
+**`ym target config`** writes the config over SFTP (mode 0600; `--force` keeps a 0600 `.bak-<UTC>` copy). The admin password is hashed locally with bcrypt (cost 10) in the format YOURLS expects (`phpass:` + `$2y$` hash with `$` written as `!`). `--from-existing` downloads the live `user/config.php` and uploads it to `config_file`.
 
-**CI.** The site's deploy workflow works for sftp targets too: `DEPLOY_SSH_KEY` must be
-authorized for the SFTP account, and `DEPLOY_KNOWN_HOSTS` must contain the host key.
+**CI.** The site's deploy workflow works for sftp targets too: `DEPLOY_SSH_KEY` must be authorized for the SFTP account, and `DEPLOY_KNOWN_HOSTS` must contain the host key.
 
 ## Concepts
 
@@ -575,10 +427,7 @@ php  = "/usr/local/php83/bin/php"
 protect = [".well-known/"]
 ```
 
-`core.exclude` patterns are anchored at the repo root: `*` never matches across `/`,
-`tests` excludes only the top-level `tests/` directory, and `*.md` matches only root-level
-Markdown files (use `**/*.md` to match at every level). `LICENSE` and `readme.html` are kept
-unless you list them by exact name.
+`core.exclude` patterns are anchored at the repo root: `*` never matches across `/`, `tests` excludes only the top-level `tests/` directory, and `*.md` matches only root-level Markdown files (use `**/*.md` to match at every level). `LICENSE` and `readme.html` are kept unless you list them by exact name.
 
 ### Who owns what
 
@@ -589,28 +438,15 @@ unless you list them by exact name.
 | `site.toml`, `tests/redirects.toml` | you | You (`ym core` and `ym adopt` update `[core].version` and append plugins, keeping your comments). |
 | Server-local config | the server | `ym target config`. It's never in Git. |
 
-The server-local config holds the DB credentials, cookie key and users. By default it lives
-at `<parent of web root>/yourls-config/<slug>.php`. The `overlay/user/config.php` shim
-loads it. When `ym` runs the helper, it sets `YOURLS_CONFIG_FILE` to the target's
-`config_file`, and the shim reads that variable first. If you use a non-default
-`config_file`, tell the web server too, for example with
-`SetEnv YOURLS_CONFIG_FILE /home/you/...` in `overlay/.htaccess`.
+The server-local config holds the DB credentials, cookie key and users. By default it lives at `<parent of web root>/yourls-config/<slug>.php`. The `overlay/user/config.php` shim loads it. When `ym` runs the helper, it sets `YOURLS_CONFIG_FILE` to the target's `config_file`, and the shim reads that variable first. If you use a non-default `config_file`, tell the web server too, for example with `SetEnv YOURLS_CONFIG_FILE /home/you/...` in `overlay/.htaccess`.
 
 ### Passwords are stored pre-hashed
 
-YOURLS normally rewrites plaintext passwords in its config file into hashes. Here,
-YOURLS's config file is the shim, and the shim must never be modified on the server. So the
-shim sets `YOURLS_NO_HASH_PASSWORD`, and a plaintext password would stay plaintext. Instead,
-`ym target config` writes the YOURLS hash format directly (`phpass:` + `password_hash()` with
-`$` written as `!`), using the target's own PHP. To add users by hand, see the comment in
-`server/config.example.php`.
+YOURLS normally rewrites plaintext passwords in its config file into hashes. Here, YOURLS's config file is the shim, and the shim must never be modified on the server. So the shim sets `YOURLS_NO_HASH_PASSWORD`, and a plaintext password would stay plaintext. Instead, `ym target config` writes the YOURLS hash format directly (`phpass:` + `password_hash()` with `$` written as `!`), using the target's own PHP. To add users by hand, see the comment in `server/config.example.php`.
 
 ### `ym` vs `uv run ym`
 
-The globally installed `ym` runs every command, including `ym new` and `ym init`, which
-have to work before a site repo exists. Each site repo also pins a yourls-manager version in
-its `pyproject.toml`. `uv run ym ...` inside the repo uses that pinned version, and so does
-CI.
+The globally installed `ym` runs every command, including `ym new` and `ym init`, which have to work before a site repo exists. Each site repo also pins a yourls-manager version in its `pyproject.toml`. `uv run ym ...` inside the repo uses that pinned version, and so does CI.
 
 ## Development
 
@@ -620,17 +456,11 @@ uv run ruff check && uv run ruff format --check
 uv run pytest
 ```
 
-Tests that need `rsync` or `php` are skipped if those tools are missing. To run the helper
-against a real, installed YOURLS (`mysql` marker), set `YM_TEST_YOURLS_ROOT` to its web root
-and `YM_TEST_YOURLS_CONFIG` to its config file.
+Tests that need `rsync` or `php` are skipped if those tools are missing. To run the helper against a real, installed YOURLS (`mysql` marker), set `YM_TEST_YOURLS_ROOT` to its web root and `YM_TEST_YOURLS_CONFIG` to its config file.
 
-The SFTP tests (`sftp` marker) start a real OpenSSH server on 127.0.0.1 with an ordinary and
-a chrooted SFTP-only test account. They need root and `/usr/sbin/sshd` (they create the
-`ymsftp` / `ymsftponly` users) and are skipped otherwise. Set `YM_TEST_YOURLS_SRC` to a
-YOURLS checkout to check password hashes with YOURLS' own `yourls_check_password_hash()`.
+The SFTP tests (`sftp` marker) start a real OpenSSH server on 127.0.0.1 with an ordinary and a chrooted SFTP-only test account. They need root and `/usr/sbin/sshd` (they create the `ymsftp` / `ymsftponly` users) and are skipped otherwise. Set `YM_TEST_YOURLS_SRC` to a YOURLS checkout to check password hashes with YOURLS' own `yourls_check_password_hash()`.
 
-The full design is in [`docs/design.md`](docs/design.md). The site template lives in
-[`yourls-site-template`](https://github.com/RubenFixit/yourls-site-template).
+The full design is in [`docs/design.md`](docs/design.md). The site template lives in [`yourls-site-template`](https://github.com/RubenFixit/yourls-site-template).
 
 ## License
 
