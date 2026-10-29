@@ -228,7 +228,7 @@ ym plugin search [--category SLUG] [--refresh] [--json]
                  [query ...]
 ```
 
-Search the awesome-yourls catalog (cached for a day) by name, tags and description (name matches rank first). Plugins already in site.toml are marked. --category alone lists a category. Works outside a site repo.
+Search the awesome-yourls catalog (cached for a day in ~/.cache/yourls-manager/; $XDG_CACHE_HOME is honored) by name, tags and description (name matches rank first). Plugins already in site.toml are marked. --category alone lists a category. Works outside a site repo.
 
 **Positional arguments**
 
@@ -254,7 +254,7 @@ ym plugin add [--name NAME] [--ref REF] [--path PATH]
               NAME|URL
 ```
 
-Add a plugin by its awesome-yourls catalog name (exact, case-insensitive or unique prefix) or by a clone URL / project page (GitHub, GitLab, Codeberg, Bitbucket; /tree/<ref>/<dir> sets ref and path). plugin.php is looked for at the top of the repo, else one directory down (several: asks on a terminal, else needs --path). Shows the plugin header, appends a [[plugins]] block to site.toml and vendors it. Refuses duplicates and directory names used by core or overlay/. Catalog entries that link to a web page need the repo URL instead.
+Add a plugin by its awesome-yourls catalog name (exact, case-insensitive or unique prefix; quote names with spaces) or by a clone URL / project page (GitHub, GitLab, Codeberg, Bitbucket; /tree/<ref>/<dir> sets ref and path). plugin.php is looked for at the top of the repo, else one directory down (several: asks on a terminal, else needs --path). Shows the plugin header, appends a [[plugins]] block to site.toml and vendors it. Refuses duplicates and directory names used by core or overlay/. Catalog entries that link to a web page need the repo URL instead.
 
 **Positional arguments**
 
@@ -570,7 +570,7 @@ ym target add [--type {rsync,sftp}] [--host HOST] [--user USER]
               NAME
 ```
 
-Append a [deploy.targets.NAME] block to site.toml (comments are kept). On a terminal ym asks for what isn't given; otherwise --path is required (and --host for sftp). Without --host an rsync target deploys on this machine. The prod target defaults to accept = "release".
+Append a [deploy.targets.NAME] block to site.toml (comments are kept; the file is restored if the result doesn't validate). On a terminal ym asks for what isn't given; otherwise --path is required (and --host for sftp). Without --host an rsync target deploys on this machine. The prod target defaults to accept = "release".
 
 **Positional arguments**
 
@@ -616,7 +616,7 @@ Check that ym can log in to a target; set up an SSH key if needed.
 ym target login [--key PATH] target
 ```
 
-ym logs in non-interactively, so a target needs a login that works without prompts. rsync targets: SSH key authentication (BatchMode). If it fails, this creates a key with ssh-keygen when there is none and installs it with ssh-copy-id (asking for the SSH password once), then checks again. sftp targets: the check is an SFTP login (SFTP-only accounts have no shell). A key is optional there: a password in $YM_<TARGET>_PASSWORD works too. To install a key, ym logs in with the password once and appends it to .ssh/authorized_keys over SFTP.
+ym logs in non-interactively, so a target needs a login that works without prompts. rsync targets: SSH key authentication (BatchMode). If it fails, this creates a key with ssh-keygen when there is none and installs it with ssh-copy-id (asking for the SSH password once; plain ssh where ssh-copy-id is missing), then checks again. It explains the fix when a passphrase-protected key isn't in an agent (ssh-add) or a non-default key needs an ~/.ssh/config entry. sftp targets: the check is an SFTP login (SFTP-only accounts have no shell). A key is optional there: a password in $YM_<TARGET>_PASSWORD works too. To install a key, ym logs in with the password once and appends it to .ssh/authorized_keys over SFTP.
 
 **Positional arguments**
 

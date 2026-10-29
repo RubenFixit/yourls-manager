@@ -2,7 +2,15 @@
 
 Release tags: ``v<yourls>-<rev>`` with an optional ``-rc.<n>``, e.g. ``v1.10.6-1``,
 ``v1.10.6-2-rc.1``, ``v1.10.6-2``. ``<yourls>`` is the locked core version; ``<rev>``
-counts from 1 per YOURLS version. Other tags are ignored.
+counts from 1 per YOURLS version. Other tags are ignored. After a final ``vX-N`` the next
+release is ``vX-(N+1)`` (or its ``-rc.1``); while ``vX-N-rc.k`` has no final yet, ``--rc``
+gives ``rc.(k+1)`` and a plain release gives ``vX-N`` (see :func:`next_tag`).
+
+Deploy policy (:func:`check_deploy`): every target refuses a dirty tree unless
+``--allow-dirty``; ``accept = "release"`` also needs a final release tag at HEAD, and
+``--force`` overrides that (recorded as ``forced`` in release.json). After a clean deploy
+the local branch ``deployed/<target>`` points at the deployed commit (:func:`move_marker`);
+with ``[release] push_markers = true`` it is force-pushed to origin too.
 """
 
 from __future__ import annotations

@@ -2,7 +2,9 @@
 
 For sites that are not deployed by ym: CI (or the user) builds the tree of a release tag
 into ``.tar.gz`` / ``.zip`` files with a ``.sha256`` per archive and one ``<name>.json``
-metadata file. ym never uploads them; publishing is the site template's CI job.
+metadata file (:func:`metadata`). ym never uploads them; publishing is the site template's
+CI job. A REF that is itself a release tag packages that tag; otherwise the commit's newest
+release tag wins. A REF other than HEAD is built from a temporary ``git worktree``.
 
 Archives are byte-identical for the same tag (and the same ym and zlib): entries sorted by
 path, every mtime = the commit's committer time, owner 0/0 without names, mode 0644 for
@@ -173,6 +175,16 @@ def _replace(dest: Path, write) -> None:
 
 
 def metadata(cfg: SiteConfig, rel: Release, files: dict[str, str]) -> dict:
+    """The ``<name>.json`` written next to the archives; consumers rely on these fields::
+
+        {"schema": 1, "site": "<slug>", "version": "1.10.6-2", "tag": "v1.10.6-2",
+         "rc": false, "commit": "<sha>", "committed": "<ISO 8601 UTC>",
+         "core": {"version": "1.10.6", "commit": "<sha>"},
+         "plugins": {"<name>": {"repo": "...", "commit": "<sha>"}},
+         "manager": "<ym version>", "files": {"<archive file>": "<sha256>"}}
+
+    ``--allow-untagged`` builds have ``"tag": null`` and ``"untagged": true``.
+    """
     lock = load_lock(cfg.lock_file)
     data: dict = {
         "schema": METADATA_SCHEMA,

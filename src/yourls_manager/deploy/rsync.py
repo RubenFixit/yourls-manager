@@ -1,4 +1,22 @@
-"""``type = "rsync"`` deploy target."""
+"""``type = "rsync"`` deploy target.
+
+Commands run over ``ssh`` in BatchMode (key login, see ``ym target login``), or locally when
+the target has no ``host``. A deploy (:meth:`RsyncTarget.deploy`):
+
+1. build (unless ``--no-build``);
+2. preflight: rsync locally and on the server, PHP >= 8.1, the server-local config exists;
+   ``--dry-run`` then shows rsync's itemized changes and stops;
+3. upload the PHP helper (``php/ym-helper.php``) outside the web root;
+4. dump the database with the helper into ``backup_dir`` and prune to ``backup_keep``
+   (unless ``--skip-backup``; an empty database is skipped);
+5. ``rsync -az --delete --delay-updates`` with a protect filter per ``protect`` entry;
+6. if YOURLS is installed: DB upgrade, then make the active plugins exactly site.toml's;
+   otherwise point at ``admin/install.php`` and ``ym plugin apply``;
+7. write ``release.json``, then verify (unless ``--skip-verify``).
+
+Files on the server, outside the web root: ``~/.yourls-manager/ym-helper-<version>.php``
+and ``~/.yourls-manager/<slug>/release.json`` (mode 0600, see :func:`base.release_info`).
+"""
 
 from __future__ import annotations
 

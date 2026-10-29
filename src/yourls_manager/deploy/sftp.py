@@ -7,8 +7,16 @@ in ``<state_dir>/manifest.json`` (outside the web root) and computes the changes
 - delete files that the previous manifest lists but ``dist/`` no longer has, unless
   ``protect``ed. Files ym never deployed are never deleted.
 
+Uploads are atomic per file, with the entry points (``ENTRY_POINTS``) last. Then deletes,
+removal of directories that became empty, and the state files. ``--verify-remote`` stats
+every manifest file first and re-uploads those whose size changed on the server.
+
+State files in ``state_dir``: ``manifest.json`` (``tool_version``, ``deployed_at``,
+``git_commit``, ``core_version``, ``files``: relpath -> ``{sha256, size}``) and
+``release.json`` (see :func:`base.release_info`).
+
 YOURLS install/upgrade state is read over HTTP, and plugin activation is left to the admin
-UI (YOURLS has no API for it); ym prints the manual steps.
+UI (YOURLS has no API for it); ym prints the manual steps. There is no database backup.
 """
 
 from __future__ import annotations

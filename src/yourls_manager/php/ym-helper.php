@@ -13,7 +13,18 @@
  *   php ym-helper.php version
  *
  * Output: exactly one JSON object on stdout ({"ok": true, ...} or {"ok": false, "error": ...});
- * human-readable logs on stderr. Exit status 0 on success, 1 on error.
+ * human-readable logs on stderr. Exit status 0 on success, 1 on error. The YOURLS config is
+ * found via YOURLS_CONFIG_FILE (ym sets it to the target's config_file).
+ *
+ * Results:
+ *   version  helper_version, php. Does not load YOURLS.
+ *   info     php, yourls_version, db_version_code, db_version_installed, installed,
+ *            upgrade_needed, active_plugins. Read-only (bootstraps with YOURLS_INSTALLING).
+ *   dump     out, bytes, tables; or skipped + reason for a database without tables. Reads
+ *            only the config file; mysqldump --single-transaction, gzipped, mode 0600.
+ *   upgrade  upgraded (false when not needed), from, to, from_version, to_version. Refuses
+ *            when YOURLS isn't installed and for 1.3 databases (db_version 100).
+ *   plugins  activated, deactivated, active: the active set becomes exactly --active.
  *
  * https://github.com/RubenFixit/yourls-manager - MIT License
  */
@@ -25,7 +36,7 @@ if (PHP_SAPI !== 'cli') {
     exit(1);
 }
 
-const YM_HELPER_VERSION = '0.7.0';
+const YM_HELPER_VERSION = '0.8.0'; // = yourls-manager's version (tests/test_helper_php.py)
 const YM_PLUGIN_NAME_RE = '/^[A-Za-z0-9][A-Za-z0-9._-]*$/';
 
 $GLOBALS['ym_finished'] = false;

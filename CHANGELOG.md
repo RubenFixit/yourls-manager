@@ -16,17 +16,33 @@ Release artifacts for sites that ym doesn't deploy, and the template's CI provid
 - `ym new` prints release and artifact next steps for an artifact-only site (`[artifact] enabled = true`, no targets).
 - `docs/cli.md`: command reference generated from the argparse help texts by `python -m yourls_manager.clidoc` (`--check` exits 1 when it is stale; a test enforces it).
 - `docs/planned.md`: work that is not built yet, one self-contained entry per item.
+- Docs pages: `docs/site-repo.md` (layout, ownership, the full `site.toml` reference), `docs/onboarding.md`, `docs/deploying.md`, `docs/releases.md`.
 - `ym doctor`: sites with `[artifact] enabled = true` and no deploy targets are reported as artifact-only (ok, not a warning), and doctor warns when no CI file of the site's `ci_provider` runs `ym artifact build`.
 
 ### Changed
 
 - `ym repo create`, `ym ci setup` and `ym ci status` refuse sites made with the template's `ci_provider = gitlab` and point to the site README's manual GitLab setup; `ym ci` also refuses `ci_provider = none`. `ym doctor` reports `ci = true` targets on GitLab sites as GitLab CI (not checked) and warns about them when the site has no CI.
 - Every command and argument has help text; `--help` descriptions carry the details from the README's command tables, and `ym --help` lists the exit codes.
+- The README covers only the summary and getting started; the command tables and the topic sections moved to `docs/`.
 
 ### Removed
 
-- The pre-0.7 spellings that 0.7 still accepted with a warning: `ym setup`, `ym ssh-setup`, `ym server-config`, `ym plugins`, `ym sync`, `ym check`, `ym status`, `ym template-update`, `ym core --version V` and `ym release --promote` / `--list` (see "Renamed in 0.7" in the README for the new names). `ym init` no longer reads the `ym setup` progress files (`.git/ym-setup.json`, `setup.json`).
-- `docs/design.md`: the design notes for what is built are replaced by the command reference, the README and code comments; unbuilt work moved to `docs/planned.md`.
+- The pre-0.7 spellings that 0.7 still accepted with a warning: `ym setup`, `ym ssh-setup`, `ym server-config`, `ym plugins`, `ym sync`, `ym check`, `ym status`, `ym template-update`, `ym core --version V` and `ym release --promote` / `--list`. `ym init` no longer reads the `ym setup` progress files (`.git/ym-setup.json`, `setup.json`).
+
+  | Before 0.7 | Now |
+  |---|---|
+  | `ym setup [DIR]` | `ym init [DIR]` |
+  | `ym ssh-setup TARGET` | `ym target login TARGET` |
+  | `ym server-config TARGET` | `ym target config TARGET` |
+  | `ym plugins TARGET` | `ym plugin apply TARGET` |
+  | `ym sync [--plugin NAME ...]` | `ym plugin sync [NAME ...]` |
+  | `ym core --version V` | `ym core V` |
+  | `ym check [--json]` | `ym update --check [--json]` |
+  | `ym status` | `ym doctor --local` (plugin details: `ym plugin list`) |
+  | `ym template-update` | `ym template update` |
+  | `ym release --promote` / `--list` | `ym release promote` / `ym release list` |
+
+- `docs/design.md`: the design notes for what is built are replaced by the command reference, the docs pages and code comments; unbuilt work moved to `docs/planned.md`.
 
 ### Fixed
 

@@ -1,4 +1,22 @@
-"""Read and write ``yourls.lock.json``."""
+"""Read and write ``yourls.lock.json``: the exact core and plugin commits a site vendors.
+
+Written only by ``ym core`` and ``ym plugin sync`` (and the commands built on them)::
+
+    {
+      "lock_version": 1,
+      "core": {"repo": "...", "version": "1.10.6", "commit": "<sha>",
+               "tree_sha256": "<hex>", "resolved_at": "<ISO 8601 UTC>"},
+      "plugins": {
+        "<name>": {"repo": "...", "ref": "HEAD", "path": ".", "commit": "<sha>",
+                   "tree_sha256": "<hex>", "resolved_at": "..."}
+      }
+    }
+
+``tree_sha256`` is :func:`vendor.tree_sha256` of the vendored files; for core it skips the
+managed plugin directories. Plugins without a ``repo`` (bundled with core, or in
+``overlay/``) are not in the lock. Keys are sorted, indented by 2, with a trailing newline,
+so diffs stay small.
+"""
 
 from __future__ import annotations
 
