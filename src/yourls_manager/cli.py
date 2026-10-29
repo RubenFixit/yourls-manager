@@ -168,7 +168,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--url", help="base URL to check instead of a target's url")
 
     p = sub.add_parser(
-        "plugin", parents=[common], help="search, add, remove, list, enable or disable plugins"
+        "plugin",
+        parents=[common],
+        help="plugins: search, add, remove, list, enable, disable, sync, apply",
     )
     psub = p.add_subparsers(dest="plugin_cmd", metavar="ACTION", required=True)
     q = psub.add_parser(
@@ -239,7 +241,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser(
         "update",
         parents=[common],
-        help="update core to the latest release and plugins to their newest commits, then build",
+        help="update core and plugins to their newest versions and build (--check: report only)",
     )
     p.add_argument("--commit", action="store_true", help="commit the update with a summary")
     g = p.add_mutually_exclusive_group()
@@ -366,7 +368,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
-    """Design §9: new, template-update, adopt, init."""
+    """Design §9: new, template update, adopt, init."""
     fmt = argparse.RawDescriptionHelpFormatter
     p = sub.add_parser(
         "new",
