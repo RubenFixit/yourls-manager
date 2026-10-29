@@ -334,7 +334,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
-    """Design §9: new, template-update, adopt, setup."""
+    """Design §9: new, template-update, adopt, init."""
     fmt = argparse.RawDescriptionHelpFormatter
     p = sub.add_parser(
         "new",
@@ -421,8 +421,11 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--dry-run", action="store_true", help="analyze and print the plan only")
 
+    def init_args(p: argparse.ArgumentParser) -> None:
+        p.add_argument("dir", nargs="?", type=Path, metavar="DIR", help="site repo to resume")
+
     p = sub.add_parser(
-        "setup",
+        "init",
         parents=[common],
         help="interactive wizard: new site or adopt an existing install (resumable)",
         description=(
@@ -430,7 +433,8 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
             " saved, so running it again after an error resumes where it stopped."
         ),
     )
-    p.add_argument("dir", nargs="?", type=Path, metavar="DIR", help="site repo to resume")
+    init_args(p)
+    _deprecated(sub, common, "setup", "init", init_args, command="init")
 
 
 def _login_args(p: argparse.ArgumentParser) -> None:
@@ -572,8 +576,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         )
         return EXIT_OK
 
-    if cmd == "setup":
-        return _setup(args.dir)
+    if cmd == "init":
+        return _init(args.dir)
 
     if cmd == "verify":
         from .verify import verify
@@ -874,12 +878,12 @@ def _choose(question: str, options: list[str]) -> str:
             return answer
 
 
-def _setup(start: Path | None = None) -> int:
+def _init(start: Path | None = None) -> int:
     from .wizard import run_wizard
 
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         raise UsageError(
-            "`ym setup` is interactive and needs a terminal; use `ym new`, `ym adopt`,"
+            "`ym init` is interactive and needs a terminal; use `ym new`, `ym adopt`,"
             " `ym target config` and `ym deploy` directly"
         )
 

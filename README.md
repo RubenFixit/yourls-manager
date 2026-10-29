@@ -44,7 +44,7 @@ uv tool upgrade yourls-manager      # later, to update
 The easy way is the wizard. It asks a few questions and runs the steps below for you:
 
 ```sh
-ym setup                            # choose "new site"
+ym init                            # choose "new site"
 ```
 
 Or run the steps yourself:
@@ -84,7 +84,7 @@ matches the live site.
 Wizard:
 
 ```sh
-ym setup                            # choose "adopt existing install"
+ym init                            # choose "adopt existing install"
 ```
 
 Or by hand:
@@ -258,7 +258,7 @@ site.toml to push it as well.
 
 ## Setup wizard
 
-`ym setup` is an interactive front end to the commands above. It needs a terminal (without
+`ym init` is an interactive front end to the commands above. It needs a terminal (without
 one it exits with code 2). It:
 
 1. asks whether you're creating a **new site** or **adopting** an existing install, and
@@ -279,8 +279,8 @@ without the wizard.
 **Resuming.** Progress is saved in the site repo (`.git/ym-setup.json`, never committed) and
 the last unfinished site is remembered in `~/.local/state/yourls-manager/setup.json`
 (`$XDG_STATE_HOME` is honored). If a step fails or you stop early, fix the problem and run
-`ym setup` again from anywhere: it offers to resume and skips what's already done (the repo,
-a finished adoption; an existing server config is detected on the server). `ym setup DIR`
+`ym init` again from anywhere: it offers to resume and skips what's already done (the repo,
+a finished adoption; an existing server config is detected on the server). `ym init DIR`
 resumes a specific site repo, including one you created with `ym new` by hand.
 
 ## Commands
@@ -295,7 +295,7 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 
 | Command | What it does |
 |---|---|
-| `ym setup [DIR]` | Interactive wizard for a new site or an adoption; resumable (see [Setup wizard](#setup-wizard)). |
+| `ym init [DIR]` | Interactive wizard for a new site or an adoption; resumable (see [Setup wizard](#setup-wizard)). |
 | `ym target login TARGET [--key PATH]` | Check that ym can log in to the target without prompts (formerly `ym ssh-setup`). rsync targets need SSH key login. If it fails: create a key with `ssh-keygen` (default `~/.ssh/id_ed25519`) when there is none, install it with `ssh-copy-id` (asks for the SSH password once and to trust the host key; falls back to plain `ssh` where `ssh-copy-id` is missing), then check again. Explains the fix when a passphrase-protected key isn't in an agent (`ssh-add`) or a non-default key needs an `~/.ssh/config` entry. For `sftp` targets the check is an SFTP login (SFTP-only accounts have no shell); a password in `YM_<TARGET>_PASSWORD` also works there, so the key is optional. Unknown host keys are shown with their SHA256 fingerprint for you to trust, and the key is appended to `.ssh/authorized_keys` over SFTP after one password login (`.ssh` 700, file 600). |
 | `ym new [DEST] [--template SRC] [--vcs-ref REF] [--data K=V ...] [--defaults] [--no-vendor] [--no-git]` | Create a site repo from the template. The default template is `gh:RubenFixit/yourls-site-template`; override it with `--template` or the `YM_TEMPLATE` environment variable. Copier asks its questions unless you pass `--defaults`. Then `ym new` runs `ym core` + `ym plugin sync` (skip with `--no-vendor`), runs `git init -b main` and makes the first commit (skip with `--no-git`; skipped with a warning if no Git identity is set), and tries `uv lock`. Refuses a non-empty `DEST`. |
 | `ym template-update [--vcs-ref REF] [--manager-version vX.Y.Z] [--defaults]` | Run `copier update` in the site repo. Refuses if the Git tree is dirty. `--manager-version` also bumps the yourls-manager pin. Then it tries `uv lock` and prints `git diff --stat` for you to review and commit. |
@@ -330,7 +330,7 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 `ym core` and `ym plugin sync` won't overwrite vendored files that have uncommitted Git changes,
 because Git is your backup. Commit first or pass `--force`.
 
-`ym new`, `ym setup` and `ym template-update` run Copier as `uvx copier`, or as `copier` if
+`ym new`, `ym init` and `ym template-update` run Copier as `uvx copier`, or as `copier` if
 uv isn't on your PATH.
 
 ### `ym adopt`
@@ -468,7 +468,7 @@ checks the size of every deployed file and uploads the ones someone changed agai
 that was changed on the server and then removed from the build is left in place with a
 warning.
 
-**Manual admin steps** (ym prints them after every deploy, `ym setup` lists them too):
+**Manual admin steps** (ym prints them after every deploy, `ym init` lists them too):
 
 - new site: open `<url>/admin/install.php` once to create the tables;
 - after a core update: open `<url>/admin/upgrade.php` and run the upgrade (back up the
@@ -566,7 +566,7 @@ shim sets `YOURLS_NO_HASH_PASSWORD`, and a plaintext password would stay plainte
 
 ### `ym` vs `uv run ym`
 
-The globally installed `ym` runs every command, including `ym new` and `ym setup`, which
+The globally installed `ym` runs every command, including `ym new` and `ym init`, which
 have to work before a site repo exists. Each site repo also pins a yourls-manager version in
 its `pyproject.toml`. `uv run ym ...` inside the repo uses that pinned version, and so does
 CI.

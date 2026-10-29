@@ -28,6 +28,7 @@ def _help(capsys) -> str:
         ),
         (["status"], {"command": "doctor", "local": True, "target": None, "with_plugins": True}),
         (["check", "--json"], {"command": "update", "check": True, "json": True}),
+        (["setup", "site"], {"command": "init"}),
     ],
 )
 def test_deprecated_alias_parses_as_new_command(old, new):
@@ -39,7 +40,7 @@ def test_deprecated_alias_parses_as_new_command(old, new):
 
 def test_deprecated_aliases_hidden_from_help(capsys):
     out = _help(capsys)
-    for old in ("plugins", "ssh-setup", "server-config", "sync", "status", "check"):
+    for old in ("plugins", "ssh-setup", "server-config", "sync", "status", "check", "setup"):
         assert f"\n    {old} " not in out
 
 

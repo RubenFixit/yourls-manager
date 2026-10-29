@@ -1,4 +1,4 @@
-"""`ym setup` wizard (design §9), driven with scripted answers."""
+"""`ym init` wizard (design §9), driven with scripted answers."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from yourls_manager.cli import main
-from yourls_manager.wizard import SetupState, run_wizard
+from yourls_manager.wizard import InitState, run_wizard
 
 
 @pytest.fixture(autouse=True)
@@ -125,7 +125,7 @@ def test_adopt_stop_to_configure_prod(tmp_path):
     ym = FakeYm(prod=False)
     res = run_wizard(Script(["adopt", "s", "n", ""]), invoke=ym, cwd=tmp_path)
     assert len(ym.calls) == 1
-    assert res.resumable and any("ym setup" in r for r in res.remaining)
+    assert res.resumable and any("ym init" in r for r in res.remaining)
     assert any("target add prod" in r for r in res.remaining)
 
 
@@ -159,13 +159,13 @@ def test_failing_new_stops(tmp_path):
     assert "re-run" in res.remaining[0]
 
 
-def test_setup_requires_tty(capsys):
-    assert main(["setup"]) == 2
+def test_init_requires_tty(capsys):
+    assert main(["init"]) == 2
     assert "terminal" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
-    "cmd", ["new", "template-update", "target config", "adopt", "setup", "target login"]
+    "cmd", ["new", "template-update", "target config", "adopt", "init", "target login"]
 )
 def test_help(cmd, capsys):
     with pytest.raises(SystemExit) as exc:
@@ -182,8 +182,8 @@ def test_adopt_failure_then_resume(tmp_path, capsys):
     res = run_wizard(Script(["adopt", "s", "y"]), invoke=ym, cwd=tmp_path)
     site = tmp_path / "s"
     assert res.exit_code == 1 and res.resumable
-    assert "run `ym setup` again to resume" in capsys.readouterr().out
-    assert SetupState(site, tmp_path / "state").data["completed"] == ["new"]
+    assert "run `ym init` again to resume" in capsys.readouterr().out
+    assert InitState(site, tmp_path / "state").data["completed"] == ["new"]
 
     # second run from an unrelated directory: offered via the remembered pointer
     ym2 = FakeYm(prod=True)
@@ -197,9 +197,9 @@ def test_adopt_failure_then_resume(tmp_path, capsys):
         [*S, "target", "config", "prod", "--from-existing"],
     ]
     assert res.exit_code == 0 and not ask.answers
-    st = SetupState(site, tmp_path / "state")
+    st = InitState(site, tmp_path / "state")
     assert st.data["finished"] and st.data["completed"] == ["new", "adopt"]
-    assert not (tmp_path / "state" / "setup.json").exists()  # pointer cleared when finished
+    assert not (tmp_path / "state" / "init.json").exists()  # pointer cleared when finished
 
 
 def test_resume_skips_completed_adopt(tmp_path, capsys):
@@ -261,3 +261,21 @@ def test_ssh_setup_declined_is_resumable(tmp_path):
                      cwd=tmp_path)  # fmt: skip
     assert res.resumable and any("target login prod" in r for r in res.remaining)
     assert len(ym.calls) == 1
+
+
+def test_legacy_setup_progress_is_resumed_and_migrated(tmp_path, capsys):
+    """Progress saved by `ym setup` (< 0.7) is picked up by `ym init`."""
+    import json
+
+    ym = FakeYm(prod=True, fail="adopt")
+    run_wizard(Script(["adopt", "s", "y"]), invoke=ym, cwd=tmp_path)
+    site, home = tmp_path / "s", tmp_path / "state"
+    # rewrite the new-style files as the old names
+    (site / ".git" / "ym-init.json").rename(site / ".git" / "ym-setup.json")
+    (home / "init.json").rename(home / "setup.json")
+    st = InitState(site, home)
+    assert st.mode == "adopt" and st.is_done("new")
+    st.mark("adopt")
+    assert (site / ".git" / "ym-init.json").is_file()
+    assert not (site / ".git" / "ym-setup.json").exists() and not (home / "setup.json").exists()
+    assert json.loads((home / "init.json").read_text())["site"] == str(site)

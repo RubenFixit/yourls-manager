@@ -1,14 +1,15 @@
-"""`ym setup`: interactive onboarding wizard (design §9).
+"""`ym init` (formerly ``ym init``): interactive onboarding wizard (design §9).
 
 The wizard only orchestrates the non-interactive commands (``ym new``, ``ym target login``,
 ``ym adopt``, ``ym target config``, ``ym deploy --dry-run``), printing each equivalent
 command before running it. ``run_wizard`` is pure apart from its injected callables, so
 tests drive it with scripted answers.
 
-Resuming: progress is saved in ``<site>/.git/ym-setup.json`` (never committed) and the
-last unfinished site is remembered in ``$XDG_STATE_HOME/yourls-manager/setup.json``
-(default ``~/.local/state``). Running ``ym setup`` again (or ``ym setup DIR``) offers to
-continue where it stopped; steps that are already done are skipped.
+Resuming: progress is saved in ``<site>/.git/ym-init.json`` (never committed) and the
+last unfinished site is remembered in ``$XDG_STATE_HOME/yourls-manager/init.json``
+(default ``~/.local/state``). Running ``ym init`` again (or ``ym init DIR``) offers to
+continue where it stopped; steps that are already done are skipped. Progress files from
+before the rename (``ym-setup.json`` / ``setup.json``) are read and replaced on save.
 """
 
 from __future__ import annotations
@@ -30,7 +31,10 @@ Invoke = Callable[[Sequence[str]], int]
 ConfigExists = Callable[[Path, str], bool]
 SshOk = Callable[[Path, str], bool]
 
-STATE_NAME = "ym-setup.json"
+STATE_NAME = "ym-init.json"
+LEGACY_STATE_NAME = "ym-setup.json"  # before 0.7 (`ym init`)
+POINTER_NAME = "init.json"
+LEGACY_POINTER_NAME = "setup.json"
 TARGET = "prod"
 
 
@@ -51,16 +55,17 @@ def state_home() -> Path:
     return Path(base) / "yourls-manager"
 
 
-class SetupState:
+class InitState:
     """Per-site progress (in .git/) plus a global pointer to the last unfinished site."""
 
     def __init__(self, site: Path, home: Path):
         self.site = site
         self.home = home
         self.data: dict[str, Any] = {"mode": None, "completed": [], "finished": False}
-        if self.file and self.file.is_file():
+        source = self.file if self.file and self.file.is_file() else self._legacy_file
+        if source and source.is_file():
             try:
-                loaded = json.loads(self.file.read_text(encoding="utf-8"))
+                loaded = json.loads(source.read_text(encoding="utf-8"))
                 if isinstance(loaded, dict):
                     self.data.update(loaded)
             except (OSError, json.JSONDecodeError):
@@ -70,6 +75,14 @@ class SetupState:
     def file(self) -> Path | None:
         git_dir = self.site / ".git"
         return git_dir / STATE_NAME if git_dir.is_dir() else None
+
+    @property
+    def _legacy_file(self) -> Path | None:
+        git_dir = self.site / ".git"
+        return git_dir / LEGACY_STATE_NAME if git_dir.is_dir() else None
+
+    def exists(self) -> bool:
+        return any(f is not None and f.is_file() for f in (self.file, self._legacy_file))
 
     @property
     def mode(self) -> str | None:
@@ -92,10 +105,13 @@ class SetupState:
         if self.file is not None:
             try:
                 self.file.write_text(json.dumps(self.data, indent=2) + "\n", encoding="utf-8")
+                if self._legacy_file is not None:
+                    self._legacy_file.unlink(missing_ok=True)
             except OSError as exc:  # pragma: no cover - best effort
                 console.warn(f"could not save setup progress: {exc}")
-        pointer = self.home / "setup.json"
+        pointer = self.home / POINTER_NAME
         try:
+            (self.home / LEGACY_POINTER_NAME).unlink(missing_ok=True)
             if self.data.get("finished"):
                 if _read_pointer(self.home) == self.site:
                     pointer.unlink(missing_ok=True)
@@ -111,11 +127,13 @@ class SetupState:
 
 
 def _read_pointer(home: Path) -> Path | None:
-    try:
-        data = json.loads((home / "setup.json").read_text(encoding="utf-8"))
-        return Path(data["site"])
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
+    for name in (POINTER_NAME, LEGACY_POINTER_NAME):
+        try:
+            data = json.loads((home / name).read_text(encoding="utf-8"))
+            return Path(data["site"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return None
 
 
 def find_resumable(cwd: Path, home: Path) -> Path | None:
@@ -123,8 +141,8 @@ def find_resumable(cwd: Path, home: Path) -> Path | None:
     for cand in (cwd, _read_pointer(home)):
         if cand is None or not (cand / SITE_FILE).is_file():
             continue
-        st = SetupState(cand, home)
-        if st.file is not None and st.file.is_file() and not st.data.get("finished"):
+        st = InitState(cand, home)
+        if st.exists() and not st.data.get("finished"):
             return cand
     return None
 
@@ -208,7 +226,7 @@ def run_wizard(
 ) -> WizardResult:
     """Run the onboarding flow. ``ask(question, default)`` returns the raw answer.
 
-    ``start``: a site dir to resume (``ym setup DIR``). Otherwise an unfinished setup in
+    ``start``: a site dir to resume (``ym init DIR``). Otherwise an unfinished setup in
     ``cwd`` or the remembered one is offered for resuming.
     """
     res = WizardResult()
@@ -226,11 +244,11 @@ def run_wizard(
     def failed(code: int, argv: list[str]) -> WizardResult:
         res.exit_code = code
         res.resumable = True
-        res.remaining.append("fix the error above, then run `ym setup` again to resume")
+        res.remaining.append("fix the error above, then run `ym init` again to resume")
         res.remaining.append(f"(or run the failed step yourself: `{_cmd(argv)}`)")
         return _summary(res)
 
-    console.info("yourls-manager setup: create a Git-managed YOURLS site repo.")
+    console.info("yourls-manager init: create a Git-managed YOURLS site repo.")
     console.info("Every step prints the equivalent `ym` command so you can script it later.")
 
     # ---- resume or start fresh
@@ -238,19 +256,19 @@ def run_wizard(
     if start is not None:
         start = (cwd / start.expanduser()).resolve()
         if not (start / SITE_FILE).is_file():
-            raise YMError(f"{start} is not a site repo (no {SITE_FILE}); run `ym setup` instead")
+            raise YMError(f"{start} is not a site repo (no {SITE_FILE}); run `ym init` instead")
         dest = start
     else:
         found = find_resumable(cwd, home)
         if found is not None:
-            st = SetupState(found, home)
+            st = InitState(found, home)
             done = ", ".join(st.data.get("completed", [])) or "repo created"
             console.info(f"Unfinished setup found: {found} ({st.mode or '?'}; done: {done})")
             if _yes(ask, "Resume it?"):
                 dest = found
 
     if dest is not None:
-        state = SetupState(dest, home)
+        state = InitState(dest, home)
         res.site_dir = dest
         console.info(f"Resuming setup of {dest}")
         if state.mode is None:
@@ -268,7 +286,7 @@ def run_wizard(
         dest_raw = _text(ask, "Directory for the new site repo", "yourls-site")
         dest = (cwd / Path(dest_raw).expanduser()).resolve()
         res.site_dir = dest
-        state = SetupState(dest, home)
+        state = InitState(dest, home)
         if (dest / SITE_FILE).is_file():
             console.info(f"{dest} already contains a site repo; continuing with it.")
         else:
@@ -279,9 +297,9 @@ def run_wizard(
             code = step(new_argv)
             if code != EXIT_OK:
                 res.exit_code = code
-                res.remaining.append("fix the error above and re-run `ym setup`")
+                res.remaining.append("fix the error above and re-run `ym init`")
                 return _summary(res)
-            state = SetupState(dest, home)  # .git exists now
+            state = InitState(dest, home)  # .git exists now
         state.mode = mode
         state.mark("new")
 
@@ -293,7 +311,7 @@ def run_wizard(
         console.error(str(exc))
         res.exit_code = exc.exit_code
         res.resumable = True
-        res.remaining.append(f"fix {dest / SITE_FILE}, then run `ym setup` again to resume")
+        res.remaining.append(f"fix {dest / SITE_FILE}, then run `ym init` again to resume")
         return _summary(res)
     has_prod = TARGET in cfg.targets
     if not has_prod:
@@ -330,7 +348,7 @@ def run_wizard(
                 return failed(code, ssh_argv)
         else:
             res.resumable = True
-            res.remaining += [_cmd(ssh_argv), "then run `ym setup` again to resume"]
+            res.remaining += [_cmd(ssh_argv), "then run `ym init` again to resume"]
             return _summary(res)
 
     # ---- adopt
@@ -354,7 +372,7 @@ def run_wizard(
             res.resumable = True
             res.remaining += [
                 _cmd([*site, "target", "add", TARGET]),
-                "then run `ym setup` again to resume",
+                "then run `ym init` again to resume",
             ]
             return _summary(res)
         code = step(adopt_argv)
@@ -371,7 +389,7 @@ def run_wizard(
         res.resumable = True
         res.remaining += [
             _cmd([*site, "target", "add", TARGET]),
-            "then run `ym setup` again to resume (server config, deploy preview)",
+            "then run `ym init` again to resume (server config, deploy preview)",
         ]
         return _summary(res)
 
@@ -397,7 +415,7 @@ def run_wizard(
                 return failed(code, sc_argv)
         else:
             res.resumable = True
-            res.remaining += [_cmd(sc_argv), "then run `ym setup` again to resume"]
+            res.remaining += [_cmd(sc_argv), "then run `ym init` again to resume"]
             return _summary(res)
 
     # ---- deploy preview
@@ -437,5 +455,5 @@ def _summary(res: WizardResult) -> WizardResult:
         for r in res.remaining:
             console.info(f"    {r}")
     if res.resumable:
-        console.info("Progress is saved: `ym setup` picks up where this left off.")
+        console.info("Progress is saved: `ym init` picks up where this left off.")
     return res

@@ -20,6 +20,9 @@ All notable changes to this project are documented here. The format follows
 - `ym core VERSION`: the version is positional (`ym core latest`).
 - `ym update --force`: passed to the core and plugin steps (uncommitted changes in `yourls/`).
 - `ym update --check [--json]`, the new name of `ym check` (read-only, exit 10 on updates).
+- `ym init [DIR]`, the new name of the `ym setup` wizard. Its progress files are now
+  `.git/ym-init.json` and `$XDG_STATE_HOME/yourls-manager/init.json`; an unfinished
+  `ym setup` is still found and resumed (the old files are replaced on the next save).
 - `ym doctor --local`: only the tools and the site repo, no target checks (offline). The
   report now names the site and shows the locked core commit; drift problems are listed
   one per line.
@@ -40,6 +43,7 @@ are hidden from `ym --help` and will be removed in 0.8.
 - `ym sync [--plugin NAME ...]`: use `ym plugin sync [NAME ...]`.
 - `ym core --version V`: use `ym core V` (the option clashed with the global `ym --version`).
 - `ym check`: use `ym update --check`.
+- `ym setup [DIR]`: use `ym init [DIR]`.
 - `ym status`: use `ym doctor --local` (and `ym plugin list` for plugin details). The alias
   runs both, and now exits 1 on drift.
 
