@@ -1,10 +1,10 @@
-"""`ym target config` (design §9): create the server-local YOURLS config on a target.
+"""`ym target config`: create the server-local YOURLS config on a target.
 
 Secrets (DB password, admin password) are read from the environment or prompted with
 ``getpass``; they never appear in argv or logs. The admin password is stored in the format
 YOURLS uses (``phpass:`` + ``password_hash()`` with ``$`` stored as ``!``): hashed by the
 target's PHP (password on stdin) for rsync targets, or locally with bcrypt for sftp targets,
-which have no PHP CLI (design §10.4).
+which have no PHP CLI.
 """
 
 from __future__ import annotations

@@ -432,7 +432,7 @@ my-site/
 └── dist/               # build output (gitignored)
 ```
 
-A minimal `site.toml` (the full schema is in [design §2](docs/design.md#2-sitetoml-schema)):
+A minimal `site.toml`:
 
 ```toml
 [site]
@@ -494,7 +494,7 @@ Tests that need `rsync` or `php` are skipped if those tools are missing. To run 
 
 The SFTP tests (`sftp` marker) start a real OpenSSH server on 127.0.0.1 with an ordinary and a chrooted SFTP-only test account. They need root and `/usr/sbin/sshd` (they create the `ymsftp` / `ymsftponly` users) and are skipped otherwise. Set `YM_TEST_YOURLS_SRC` to a YOURLS checkout to check password hashes with YOURLS' own `yourls_check_password_hash()`.
 
-The full design is in [`docs/design.md`](docs/design.md). The site template lives in [`yourls-site-template`](https://github.com/RubenFixit/yourls-site-template).
+Command reference: [`docs/cli.md`](docs/cli.md). Planned work: [`docs/planned.md`](docs/planned.md). The site template lives in [`yourls-site-template`](https://github.com/RubenFixit/yourls-site-template).
 
 ## License
 

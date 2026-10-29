@@ -4,33 +4,29 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-### Added
-
-- `docs/cli.md`: command reference generated from the argparse help texts by `python -m yourls_manager.clidoc` (`--check` exits 1 when it is stale; a test enforces it).
-
-### Changed
-
-- Every command and argument has help text; `--help` descriptions now carry the details from the README's command tables, and `ym --help` lists the exit codes.
-
 ## [0.8.0] - 2026-10-29
 
 Release artifacts for sites that ym doesn't deploy, and the template's CI provider choice (template v0.7.0). The 0.7 deprecated spellings are gone.
 
 ### Added
 
-- `ym artifact build [--ref REF] [--out DIR] [--format F ...] [--allow-untagged]`: build a release tag's web root into reproducible `.tar.gz` / `.zip` archives (no top-level directory; sorted entries, fixed times, owners and modes, so rebuilding a tag gives the same bytes), with a `<archive>.sha256` per archive and a `<name>.json` with the release metadata (site, version, tag, rc, commit, core, plugins, ym version, file hashes). Refuses commits without a release tag and dirty trees. Default output: `dist-artifacts/`. Nothing is uploaded: publishing is a CI job (design §15).
+- `ym artifact build [--ref REF] [--out DIR] [--format F ...] [--allow-untagged]`: build a release tag's web root into reproducible `.tar.gz` / `.zip` archives (no top-level directory; sorted entries, fixed times, owners and modes, so rebuilding a tag gives the same bytes), with a `<archive>.sha256` per archive and a `<name>.json` with the release metadata (site, version, tag, rc, commit, core, plugins, ym version, file hashes). Refuses commits without a release tag and dirty trees. Default output: `dist-artifacts/`. Nothing is uploaded: publishing is a CI job.
 - `[artifact]` in `site.toml`: `enabled`, `formats` (`tar.gz`, `zip`) and `name` (`{slug}`, `{version}`, `{tag}`).
 - `ym template update --data K=V` (repeatable): change a template answer, e.g. `--data ci_provider=gitlab` or `--data release_artifact=true` (passed to `copier update`).
 - `ym new` prints release and artifact next steps for an artifact-only site (`[artifact] enabled = true`, no targets).
+- `docs/cli.md`: command reference generated from the argparse help texts by `python -m yourls_manager.clidoc` (`--check` exits 1 when it is stale; a test enforces it).
+- `docs/planned.md`: work that is not built yet, one self-contained entry per item.
 - `ym doctor`: sites with `[artifact] enabled = true` and no deploy targets are reported as artifact-only (ok, not a warning), and doctor warns when no CI file of the site's `ci_provider` runs `ym artifact build`.
 
 ### Changed
 
 - `ym repo create`, `ym ci setup` and `ym ci status` refuse sites made with the template's `ci_provider = gitlab` and point to the site README's manual GitLab setup; `ym ci` also refuses `ci_provider = none`. `ym doctor` reports `ci = true` targets on GitLab sites as GitLab CI (not checked) and warns about them when the site has no CI.
+- Every command and argument has help text; `--help` descriptions carry the details from the README's command tables, and `ym --help` lists the exit codes.
 
 ### Removed
 
 - The pre-0.7 spellings that 0.7 still accepted with a warning: `ym setup`, `ym ssh-setup`, `ym server-config`, `ym plugins`, `ym sync`, `ym check`, `ym status`, `ym template-update`, `ym core --version V` and `ym release --promote` / `--list` (see "Renamed in 0.7" in the README for the new names). `ym init` no longer reads the `ym setup` progress files (`.git/ym-setup.json`, `setup.json`).
+- `docs/design.md`: the design notes for what is built are replaced by the command reference, the README and code comments; unbuilt work moved to `docs/planned.md`.
 
 ### Fixed
 

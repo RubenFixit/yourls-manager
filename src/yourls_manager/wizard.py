@@ -1,4 +1,4 @@
-"""`ym init`: interactive onboarding wizard (design §9).
+"""`ym init`: interactive onboarding wizard.
 
 The wizard only orchestrates the non-interactive commands (``ym new``, ``ym target login``,
 ``ym adopt``, ``ym target config``, ``ym deploy --dry-run``), printing each equivalent

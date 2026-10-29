@@ -166,7 +166,7 @@ CI_FILES = {"github": ".github/workflows/*.y*ml", "gitlab": ".gitlab-ci.yml"}
 
 
 def check_artifact(rep: Report, cfg: SiteConfig) -> None:
-    """[artifact] enabled = true: something must publish the archives (design §15.3)."""
+    """[artifact] enabled = true: something must publish the archives."""
     if not cfg.artifact.enabled:
         return
     provider = ci_provider(cfg.root)

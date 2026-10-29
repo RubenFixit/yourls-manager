@@ -1,4 +1,4 @@
-"""`ym target add` / `ym target list` (design §14)."""
+"""`ym target add` / `ym target list`."""
 
 from __future__ import annotations
 

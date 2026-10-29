@@ -1,4 +1,4 @@
-"""`ym adopt` (design §9)."""
+"""`ym adopt`."""
 
 from __future__ import annotations
 

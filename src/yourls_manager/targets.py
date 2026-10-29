@@ -1,4 +1,4 @@
-"""`ym target add` / `ym target list`: deploy targets in site.toml (design §14).
+"""`ym target add` / `ym target list`: deploy targets in site.toml.
 
 ``add`` appends a ``[deploy.targets.NAME]`` block to site.toml as text (comments and layout
 are kept, like ``ym plugin add``), re-parses the file and restores it if the result doesn't

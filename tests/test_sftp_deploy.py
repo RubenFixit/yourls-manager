@@ -1,4 +1,4 @@
-"""`ym deploy` to sftp targets (design §10.3) against a real OpenSSH server."""
+"""`ym deploy` to sftp targets against a real OpenSSH server."""
 
 from __future__ import annotations
 

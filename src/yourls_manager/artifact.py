@@ -1,4 +1,4 @@
-"""`ym artifact build`: reproducible release archives of the built web root (design §15.2).
+"""`ym artifact build`: reproducible release archives of the built web root.
 
 For sites that are not deployed by ym: CI (or the user) builds the tree of a release tag
 into ``.tar.gz`` / ``.zip`` files with a ``.sha256`` per archive and one ``<name>.json``

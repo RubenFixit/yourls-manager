@@ -1,4 +1,4 @@
-"""`ym plugin search`, `ym plugin add NAME` (design §11.1) and `ym doctor` (§11.3)."""
+"""`ym plugin search`, `ym plugin add NAME` and `ym doctor`."""
 
 from __future__ import annotations
 

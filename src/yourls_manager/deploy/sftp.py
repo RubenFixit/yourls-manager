@@ -1,4 +1,4 @@
-"""``type = "sftp"`` deploy target (design §10.3).
+"""``type = "sftp"`` deploy target.
 
 There is no rsync and no PHP CLI on the server, so ym keeps a manifest of what it deployed
 in ``<state_dir>/manifest.json`` (outside the web root) and computes the changes itself:

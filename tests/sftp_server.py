@@ -1,4 +1,4 @@
-"""A real OpenSSH server on 127.0.0.1 for the SFTP tests (design §10).
+"""A real OpenSSH server on 127.0.0.1 for the SFTP tests.
 
 Two accounts:
 

@@ -1,4 +1,4 @@
-"""`ym adopt` from sftp targets (design §10.4), then target config + deploy over SFTP."""
+"""`ym adopt` from sftp targets, then target config + deploy over SFTP."""
 
 from __future__ import annotations
 

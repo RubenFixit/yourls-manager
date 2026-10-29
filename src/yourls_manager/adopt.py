@@ -1,4 +1,4 @@
-"""`ym adopt` (design §9, §10.4): bring an existing, unmanaged YOURLS install under management.
+"""`ym adopt`: bring an existing, unmanaged YOURLS install under management.
 
 Works inside a site repo created by ``ym new``. The install is snapshotted (a local
 directory, an rsync pull of a target's web root, or a recursive SFTP download for sftp

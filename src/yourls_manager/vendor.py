@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 
 from .util import YMError, console
 
-# Files kept in core even when a wildcard exclude would match them (design §2).
+# Files kept in core even when a wildcard exclude would match them.
 PROTECTED_CORE_FILES = frozenset({"LICENSE", "LICENSE.md", "LICENSE.txt", "readme.html"})
 
 PathFilter = Callable[[str], bool]

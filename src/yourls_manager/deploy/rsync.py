@@ -1,4 +1,4 @@
-"""``type = "rsync"`` deploy target (design §5)."""
+"""``type = "rsync"`` deploy target."""
 
 from __future__ import annotations
 

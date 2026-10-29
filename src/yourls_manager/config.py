@@ -1,4 +1,4 @@
-"""Load and validate ``site.toml`` (design §2)."""
+"""Load and validate ``site.toml``."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ HOST_RE = re.compile(r"^[A-Za-z0-9.-]+$|^\[[0-9A-Fa-f:.]+\]$")
 USER_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 # Keys of rsync targets that mean nothing for sftp targets (warned about, then ignored).
 SFTP_IGNORED_KEYS = ("php", "backup_dir", "backup_keep")
-# Release artifacts (design §15.1).
+# Release artifacts.
 ARTIFACT_FORMATS = ("tar.gz", "zip")
 ARTIFACT_PLACEHOLDERS = ("slug", "version", "tag")
 ARTIFACT_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]*$")
@@ -105,9 +105,9 @@ class TargetSpec:
     protect: tuple[str, ...] = ()
     backup_keep: int = 10
     url: str = ""
-    state_dir: str = ""  # sftp only: manifest + release.json (design §10.3)
-    accept: str = "any"  # deploy policy (design §11.5): "any" | "release"
-    ci: bool = False  # deployed by the site's CI (design §13, §15.4)
+    state_dir: str = ""  # sftp only: manifest + release.json
+    accept: str = "any"  # deploy policy: "any" | "release"
+    ci: bool = False  # deployed by the site's CI
     given: frozenset[str] = frozenset()  # keys set explicitly in site.toml
 
     @property
@@ -128,8 +128,8 @@ class SiteConfig:
     build: BuildSpec
     targets: dict[str, TargetSpec]
     warnings: list[str] = field(default_factory=list)
-    push_markers: bool = False  # [release] push_markers (design §11.5)
-    artifact: ArtifactSpec = field(default_factory=ArtifactSpec)  # [artifact] (design §15.1)
+    push_markers: bool = False  # [release] push_markers
+    artifact: ArtifactSpec = field(default_factory=ArtifactSpec)  # [artifact]
 
     @property
     def site_file(self) -> Path:
@@ -183,7 +183,7 @@ _CI_PROVIDER_RE = re.compile(r"""^ci_provider:\s*['"]?([A-Za-z]+)""", re.MULTILI
 
 
 def ci_provider(root: Path) -> str:
-    """The template's ``ci_provider`` answer (design §15.4); sites from before it: github."""
+    """The template's ``ci_provider`` answer; sites from before it: github."""
     answers = root / ANSWERS_FILE
     text = answers.read_text(encoding="utf-8") if answers.is_file() else ""
     m = _CI_PROVIDER_RE.search(text)
@@ -501,7 +501,7 @@ def _parse_target(name: str, raw: Any, site: SiteInfo, warnings: list[str]) -> T
     state_dir = ""
     checked = [("path", path), ("config_file", config_file)]
     if ttype == "sftp":
-        # Design §10.1: no shell, so no PHP CLI, no DB dumps; deploy state lives in state_dir.
+        # No shell, so no PHP CLI, no DB dumps; deploy state lives in state_dir.
         if host is None:
             raise ConfigError(f"{prefix}.host", "is required for sftp targets")
         state_dir = normalize_remote_path(

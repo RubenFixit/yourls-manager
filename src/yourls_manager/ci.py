@@ -1,4 +1,4 @@
-"""`ym ci setup` / `ym ci status`: deploy from GitHub Actions, opt-in per target (§13.2).
+"""`ym ci setup` / `ym ci status`: deploy from GitHub Actions, opt-in per target.
 
 The site template's ``.github/workflows/deploy.yml`` deploys target ``prod`` in the
 ``production`` environment and every other target in ``staging``, only for targets with

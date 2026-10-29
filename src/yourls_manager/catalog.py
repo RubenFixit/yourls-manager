@@ -1,4 +1,4 @@
-"""The awesome-yourls plugin catalog: fetch, cache, search, resolve (design §11.1)."""
+"""The awesome-yourls plugin catalog: fetch, cache, search, resolve."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""SFTP transport (design §10.2) against a real OpenSSH server, plus sftp target config."""
+"""SFTP transport against a real OpenSSH server, plus sftp target config."""
 
 from __future__ import annotations
 

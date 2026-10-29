@@ -1,4 +1,4 @@
-"""target config, target login and the wizard for sftp targets (design §10.4, §10.5)."""
+"""target config, target login and the wizard for sftp targets."""
 
 from __future__ import annotations
 

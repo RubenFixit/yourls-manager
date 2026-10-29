@@ -1,4 +1,4 @@
-"""`ym repo create` and `ym ci setup|status` (design §13) against a fake `gh` on PATH."""
+"""`ym repo create` and `ym ci setup|status` against a fake `gh` on PATH."""
 
 from __future__ import annotations
 
@@ -389,7 +389,7 @@ def test_real_key_and_fingerprints(tmp_path):
     assert textwrap.dedent(key.private.read_text()).startswith("-----BEGIN OPENSSH")
 
 
-# --------------------------------------------------------------------------- ci_provider (§15.4)
+# --------------------------------------------------------------------------- ci_provider
 
 
 def test_gitlab_site_refuses_github_commands(site, fake_gh, capsys):

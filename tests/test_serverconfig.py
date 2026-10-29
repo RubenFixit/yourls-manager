@@ -1,4 +1,4 @@
-"""`ym target config` (design §9)."""
+"""`ym target config`."""
 
 from __future__ import annotations
 

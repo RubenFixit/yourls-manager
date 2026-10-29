@@ -176,7 +176,7 @@ def test_set_core_version_preserves_formatting(tmp_path):
     assert f.read_text() == "[site]\nversion = \"x\"\n[core]\nversion = '1.1.0'\n"
 
 
-# --------------------------------------------------------------------------- [artifact] (§15.1)
+# --------------------------------------------------------------------------- [artifact]
 
 
 def test_artifact_defaults_when_table_missing():

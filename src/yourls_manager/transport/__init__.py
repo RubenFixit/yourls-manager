@@ -1,1 +1,1 @@
-"""File transports for targets without a remote shell (design §10.2)."""
+"""File transports for targets without a remote shell."""

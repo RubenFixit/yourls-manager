@@ -1,4 +1,4 @@
-"""`ym artifact build` and the artifact-only site shape (design §15)."""
+"""`ym artifact build` and the artifact-only site shape."""
 
 from __future__ import annotations
 
@@ -250,7 +250,7 @@ def test_drift_refused(site, tmp_path, capsys):
     assert "does not match the lock" in capsys.readouterr().err
 
 
-# --------------------------------------------------------------------------- doctor (§15.3)
+# --------------------------------------------------------------------------- doctor
 
 
 def _doctor(site: Path, capsys, *, local: bool = False) -> str:

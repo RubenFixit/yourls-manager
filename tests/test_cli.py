@@ -1,4 +1,4 @@
-"""CLI surface: command spellings (design §14) and release parsing."""
+"""CLI surface: command spellings and release parsing."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def _help(capsys) -> str:
     ],
 )
 def test_spellings_removed_in_0_8(argv, capsys):
-    """The 0.7 spellings (design §14.1) are gone: argparse rejects them (exit 2)."""
+    """The 0.7 spellings are gone: argparse rejects them (exit 2)."""
     with pytest.raises(SystemExit) as exc:
         main(argv)
     assert exc.value.code == 2

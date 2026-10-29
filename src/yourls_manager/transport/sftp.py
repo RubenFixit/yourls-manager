@@ -1,4 +1,4 @@
-"""SFTP transport for ``type = "sftp"`` targets (design §10.2).
+"""SFTP transport for ``type = "sftp"`` targets.
 
 paramiko is imported lazily (only when a connection is made), so commands that never touch
 an sftp target don't load it.

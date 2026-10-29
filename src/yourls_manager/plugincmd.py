@@ -1,4 +1,4 @@
-"""`ym plugin list | enable | disable | add | remove` (design §11.1).
+"""`ym plugin list | enable | disable | add | remove`.
 
 site.toml edits are textual.
 """
@@ -249,7 +249,7 @@ def add_plugin(
     choose: Chooser | None = None,
     refresh: bool = False,
 ) -> str:
-    """Add a plugin by catalog name or git/project URL (design §11.1). Returns its name."""
+    """Add a plugin by catalog name or git/project URL. Returns its name."""
     from . import gitsrc
     from .drift import plugin_dir
     from .plugins import sync_plugins

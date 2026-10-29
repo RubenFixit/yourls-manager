@@ -1,4 +1,4 @@
-"""`ym init` wizard (design §9), driven with scripted answers."""
+"""`ym init` wizard, driven with scripted answers."""
 
 from __future__ import annotations
 

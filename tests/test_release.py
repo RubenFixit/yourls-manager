@@ -1,4 +1,4 @@
-"""`ym release` and the deploy policy (design §11.4, §11.5)."""
+"""`ym release` and the deploy policy."""
 
 from __future__ import annotations
 

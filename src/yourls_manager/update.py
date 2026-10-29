@@ -1,4 +1,4 @@
-"""`ym update`: routine update of core and plugins in one step (design §11.2)."""
+"""`ym update`: routine update of core and plugins in one step."""
 
 from __future__ import annotations
 

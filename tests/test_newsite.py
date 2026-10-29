@@ -1,4 +1,4 @@
-"""`ym new` and `ym template update` (design §9)."""
+"""`ym new` and `ym template update`."""
 
 from __future__ import annotations
 
@@ -150,7 +150,7 @@ def test_new_and_template_update(tmp_path, fake_github, no_uv_lock, capfd):
 
 @needs_copier
 def test_artifact_only_gitlab_site(tmp_path, fake_github, no_uv_lock, capfd):
-    """Template ci_provider=gitlab + release_artifact (design §15.4-15.5) end to end."""
+    """Template ci_provider=gitlab + release_artifact end to end."""
     dest = tmp_path / "app"
     argv = new_site_args(dest, "yourls_version=1.0.0", "ci_provider=gitlab",
                          "release_artifact=true")  # fmt: skip

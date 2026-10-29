@@ -17,7 +17,7 @@ class DeployOptions:
     no_build: bool = False
     skip_backup: bool = False
     skip_verify: bool = False
-    verify_remote: bool = False  # sftp only: stat every deployed file (design §10.3)
+    verify_remote: bool = False  # sftp only: stat every deployed file
 
 
 # Set by the deploy policy check (release.check_deploy) for the current command: the

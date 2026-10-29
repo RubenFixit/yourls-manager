@@ -1,4 +1,4 @@
-"""Git operations: ls-remote, fetch a commit, pick semver tags (design §4 notes)."""
+"""Git operations: ls-remote, fetch a commit, pick semver tags."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""`ym release` and the deploy policy (design §11.4, §11.5).
+"""`ym release` and the deploy policy.
 
 Release tags: ``v<yourls>-<rev>`` with an optional ``-rc.<n>``, e.g. ``v1.10.6-1``,
 ``v1.10.6-2-rc.1``, ``v1.10.6-2``. ``<yourls>`` is the locked core version; ``<rev>``

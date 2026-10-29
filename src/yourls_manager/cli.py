@@ -1,4 +1,4 @@
-"""Command line interface: ``yourls-manager`` / ``ym`` (design §4)."""
+"""Command line interface: ``yourls-manager`` / ``ym``."""
 
 from __future__ import annotations
 
@@ -415,7 +415,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
-    """Design §9: new, template update, adopt, init."""
+    """Onboarding commands: new, template update, adopt, init."""
     fmt = argparse.RawDescriptionHelpFormatter
     p = sub.add_parser(
         "new",

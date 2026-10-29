@@ -5,7 +5,7 @@ prompt in the middle of rsync would hang), so targets need key authentication. T
 command checks it and, when it fails, walks through creating a key (``ssh-keygen``) and
 installing it on the server (``ssh-copy-id``, which asks for the password once).
 
-SFTP targets (design §10.4) are checked with an SFTP connection instead of a shell command
+SFTP targets are checked with an SFTP connection instead of a shell command
 (SFTP-only accounts have no shell). A password from ``YM_<TARGET>_PASSWORD`` is a valid
 login there, so a key is optional; when wanted, it is installed by logging in with the
 password over SFTP and appending it to ``.ssh/authorized_keys`` (``.ssh`` 700, file 600).

@@ -1,4 +1,4 @@
-"""Read and write ``yourls.lock.json`` (design §3)."""
+"""Read and write ``yourls.lock.json``."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""GitHub via the ``gh`` CLI, and `ym repo create` (design §13.1).
+"""GitHub via the ``gh`` CLI, and `ym repo create`.
 
 `ym repo create` only stores the site on GitHub: create the repository (private unless
 ``--public``), make it ``origin`` and push the current branch, without tags (a pushed
@@ -159,7 +159,7 @@ def create_repo(cfg: SiteConfig, gh: Gh, repo: str, *, public: bool = False) -> 
 
 
 def require_github(cfg: SiteConfig, command: str, *, allow_none: bool = False) -> None:
-    """GitHub-only commands refuse sites whose template CI is GitLab (design §15.4)."""
+    """GitHub-only commands refuse sites whose template CI is GitLab."""
     provider = ci_provider(cfg.root)
     if provider == "gitlab":
         raise UsageError(
