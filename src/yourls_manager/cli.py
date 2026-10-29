@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from . import __version__
@@ -28,6 +28,43 @@ def _global_options(parser: argparse.ArgumentParser, *, suppress: bool) -> None:
         default=argparse.SUPPRESS if suppress else False,
         help="verbose output",
     )
+
+
+# Old command spellings kept for one release (design §12): hidden from `ym --help`, they warn
+# and then run the new command. Remove them in 0.8.
+REMOVED_IN = "0.8"
+
+
+def _deprecated(
+    sub,
+    common: argparse.ArgumentParser,
+    old: str,
+    new: str,
+    add_args: Callable[[argparse.ArgumentParser], None] | None = None,
+    **dest: str,
+) -> argparse.ArgumentParser:
+    """Register ``ym OLD`` as a deprecated spelling of ``ym NEW``.
+
+    ``dest`` sets the namespace keys of the new command (e.g. ``command="plugin",
+    plugin_cmd="apply"``); they override the subparser's own ``command=OLD``. No ``help=`` is
+    given, so argparse leaves the alias out of the command list."""
+    p = sub.add_parser(
+        old,
+        parents=[common],
+        description=f"Deprecated (removed in {REMOVED_IN}): use `ym {new}`.",
+    )
+    if add_args is not None:
+        add_args(p)
+    p.set_defaults(deprecated=(old, new), **dest)
+    return p
+
+
+def _warn_deprecated(args: argparse.Namespace) -> None:
+    dep = getattr(args, "deprecated", None)
+    if dep:
+        console.warn(
+            f"`ym {dep[0]}` is deprecated and will be removed in {REMOVED_IN}; use `ym {dep[1]}`"
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -115,7 +152,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--check", action="store_true", help="ask upstream for newer commits (exit 10 if any)"
     )
     q = psub.add_parser(
-        "apply", parents=[common], help="apply the active plugin set on a target (= ym plugins)"
+        "apply", parents=[common], help="make the target's active plugins exactly site.toml's"
     )
     q.add_argument("target")
     q = psub.add_parser(
@@ -181,8 +218,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true", help="show the tag and notes only")
     p.add_argument("-m", "--message", help="extra text for the release notes")
 
-    p = sub.add_parser("plugins", parents=[common], help="alias of `ym plugin apply TARGET`")
-    p.add_argument("target")
+    _deprecated(
+        sub,
+        common,
+        "plugins",
+        "plugin apply",
+        lambda p: p.add_argument("target"),
+        command="plugin",
+        plugin_cmd="apply",
+    )
 
     p = sub.add_parser(
         "doctor",
@@ -643,12 +687,6 @@ def _dispatch(args: argparse.Namespace) -> int:
         )
         return EXIT_OK
 
-    if cmd == "plugins":
-        from .deploy import get_target
-
-        get_target(cfg, args.target).apply_plugins()
-        return EXIT_OK
-
     if cmd == "server-config":
         from .serverconfig import ServerConfigOptions, server_config
 
@@ -725,6 +763,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     console.verbose = bool(getattr(args, "verbose", False))
+    _warn_deprecated(args)
     try:
         return _dispatch(args)
     except YMError as exc:

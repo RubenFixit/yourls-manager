@@ -247,9 +247,9 @@ def test_full_flow(tmp_path, upstream, server, monkeypatch, capsys):
     assert main([*S, "deploy", "local", "--skip-backup", "--skip-verify"]) == 0
     assert [c["cmd"] for c in helper_calls(log)] == ["info"]
     assert "not installed" in capsys.readouterr().err
-    assert main([*S, "plugins", "local"]) == 1
+    assert main([*S, "plugin", "apply", "local"]) == 1
     monkeypatch.setenv("FAKE_INSTALLED", "1")
-    assert main([*S, "plugins", "local"]) == 0
+    assert main([*S, "plugin", "apply", "local"]) == 0
 
     # ---- updates: check, core latest, sync --update
     core.commit(core_files("1.1.0"), tag="1.1.0")

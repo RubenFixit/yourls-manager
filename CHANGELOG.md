@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Deprecated
+
+Old command spellings still work in 0.7 but print a warning naming the new command; they
+are hidden from `ym --help` and will be removed in 0.8.
+
+- `ym plugins TARGET`: use `ym plugin apply TARGET`.
+
 ## [0.6.0] - 2026-10-29
 
 GitHub: store the site there, and opt-in deploys from GitHub Actions.
