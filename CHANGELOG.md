@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `ym gh-setup [TARGET ...] [--repo] [--rotate] [--dry-run]`: set up the GitHub environments
+  and secrets the site's deploy workflow needs, with the GitHub CLI (offers `gh auth login`
+  when it isn't logged in): creates `production` / `staging`, generates a dedicated CI key,
+  installs it on the server over the working login and checks it, stores it as
+  `DEPLOY_SSH_KEY`, and stores the host keys from `~/.ssh/known_hosts` (else `ssh-keyscan`
+  with a fingerprint confirmation) as `DEPLOY_KNOWN_HOSTS`.
+
 ## [0.5.0] - 2026-10-28
 
 Plugin catalog and `ym doctor`.

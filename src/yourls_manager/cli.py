@@ -196,6 +196,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("target", nargs="?", help="check only this target (default: all)")
 
+    p = sub.add_parser(
+        "gh-setup",
+        parents=[common],
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        help="set up GitHub environments + secrets for the deploy workflow (needs gh)",
+        description=(
+            "Prepare the site repo on GitHub for .github/workflows/deploy.yml with the GitHub\n"
+            "CLI: create the environment (prod -> production, other targets -> staging),\n"
+            "generate a dedicated CI key, install it on the server over your working login,\n"
+            "check it logs in, and store it as DEPLOY_SSH_KEY; store the server's host keys\n"
+            "from ~/.ssh/known_hosts as DEPLOY_KNOWN_HOSTS. Offers `gh auth login` if needed."
+        ),
+        epilog=(
+            "examples:\n"
+            "  ym gh-setup                 # prod and staging (if defined)\n"
+            "  ym gh-setup prod --dry-run\n"
+            "  ym gh-setup prod --rotate   # replace the CI key"
+        ),
+    )
+    p.add_argument("targets", nargs="*", metavar="TARGET", help="default: prod and staging")
+    p.add_argument("--repo", metavar="OWNER/NAME", help="GitHub repo (default: from the remote)")
+    p.add_argument("--rotate", action="store_true", help="replace an existing DEPLOY_SSH_KEY")
+    p.add_argument("--dry-run", action="store_true", help="show what would be set, change nothing")
+
     _onboarding_parsers(sub, common)
     return parser
 
@@ -543,6 +567,13 @@ def _dispatch(args: argparse.Namespace) -> int:
             console.info(f"{args.name}: active = {str(on).lower()} (applied on the next deploy)")
         else:
             console.info(f"{args.name}: already {'active' if on else 'inactive'}")
+        return EXIT_OK
+
+    if cmd == "gh-setup":
+        from .ghsetup import gh_setup, is_tty
+
+        gh_setup(cfg, args.targets, repo=args.repo, rotate=args.rotate, dry_run=args.dry_run,
+                 confirm=_confirm if is_tty() else None)  # fmt: skip
         return EXIT_OK
 
     if cmd == "update":

@@ -458,3 +458,38 @@ Likely shape: a `plugin_manager` adapter that maps `[[plugins]]` <-> manifest en
 writes the manifest into `dist/` at build time, reads the deployed manifest during
 `ym adopt` / before `ym deploy` to detect admin-side changes, and `ym plugin add/remove/
 enable/disable` keep both in step.
+
+## 13. `ym gh-setup` (v0.6)
+
+Prepares GitHub for the site template's `deploy.yml`: environment `production` for target
+`prod`, `staging` for every other target (the workflow's mapping), each with secrets
+`DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS`. Needs the GitHub CLI.
+
+`ym gh-setup [TARGET ...] [--repo OWNER/NAME] [--rotate] [--dry-run]`
+
+1. gh: missing → exit 2 with install hint; not logged in → on a terminal offer
+   `gh auth login` (run attached to the terminal), else exit 2.
+2. Repo: `--repo`, else `gh repo view` in the site root (no GitHub remote → hint
+   `gh repo create --source . --private --push`). Warn if `.github/workflows/deploy.yml` is
+   missing.
+3. Targets: default `prod` and `staging` (others are named explicitly; they deploy in
+   `staging`). Refuse local targets and two targets sharing an environment.
+4. Lookup first, change nothing until every target passed: environment exists?
+   (`gh api repos/R/environments/E`), its secret names (`gh secret list --env`), host keys,
+   and — when a key will be made — that the normal ym login works (`check_ssh`, password
+   from `YM_<TARGET>_PASSWORD` allowed for sftp).
+   Host keys: `ssh-keygen -F <host|[host]:port>` on `~/.ssh/known_hosts` (hashed entries
+   are used as they are); not found → `ssh-keyscan`, print fingerprints, confirm on a
+   terminal (no terminal: exit 2, hint `ym ssh-setup`).
+5. Apply: create the environment (`PUT`) if missing. If `DEPLOY_SSH_KEY` is missing or
+   `--rotate`: `ssh-keygen -t ed25519 -N ""` in a temp dir, comment
+   `ym-ci-<slug>-<env>-<YYYYMMDD>`; append the public key to `~/.ssh/authorized_keys`
+   (rsync: `sh -c` over ssh, idempotent, `.ssh` 700 / file 600; sftp: `install_key_sftp`);
+   log in with only that key (`-F /dev/null -o IdentitiesOnly=yes -o IdentityAgent=none`;
+   sftp: no agent, no key search, no ssh config) like CI does; `gh secret set` from stdin;
+   delete the temp dir. `--rotate` leaves the old key authorized and says so.
+   Always (re)set `DEPLOY_KNOWN_HOSTS`.
+
+Not done: removing old `ym-ci-` keys from the server, required reviewers or tag policies on
+the environments (configure in GitHub), `YM_<TARGET>_PASSWORD` as a secret for
+password-only SFTP hosts (the CI key replaces the password).

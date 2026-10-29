@@ -144,9 +144,23 @@ git remote add origin git@github.com:<you>/my-site.git
 git push -u origin main
 ```
 
-The site repo's `.github/workflows/deploy.yml` deploys `prod` when you push a `v*` tag, or
-when you run it by hand. It runs in the `production` environment. Add these secrets to that
-environment (Settings → Environments → production):
+The site repo's `.github/workflows/deploy.yml` deploys `prod` when you push a final release
+tag (`-rc.<n>` tags go to `staging`, if defined), or when you run it by hand. `prod` runs in
+the `production` environment, every other target in `staging`. Each environment needs two
+secrets. With the [GitHub CLI](https://cli.github.com) installed, let ym set them up:
+
+```sh
+ym gh-setup              # prod and staging; offers `gh auth login` if gh isn't logged in
+```
+
+It creates the environment if needed, generates a dedicated CI key (ed25519, no passphrase),
+installs its public half on the server over your working login (ssh, or SFTP for `sftp`
+targets), checks that it logs in, and stores the private half only in `DEPLOY_SSH_KEY`. The
+host keys come from your `~/.ssh/known_hosts` (else `ssh-keyscan`, with the fingerprints to
+confirm). Run it again any time: it keeps the key (`--rotate` replaces it) and refreshes the
+host keys; `--dry-run` shows what it would do.
+
+Or by hand, under Settings → Environments → production:
 
 | Secret | Value |
 |---|---|
@@ -290,6 +304,7 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 | `ym plugin apply TARGET` (alias `ym plugins TARGET`) | Make the active plugin set on the target exactly the set marked `active` in `site.toml`. Not available for `sftp` targets (it prints what to activate in the admin UI). |
 | `ym release [--rc \| --promote \| --list] [--push] [--dry-run] [-m TEXT]` | Tag the next release `v<yourls>-<rev>` (`--rc`: `-rc.<n>`; `--promote`: the newest rc's final) on a clean, drift-free tree, with release notes from the lock diff. `--list` shows releases and which targets have them deployed. |
 | `ym doctor [TARGET]` | Read-only health report, one line per check (ok / warn / FAIL) with a fix hint: git, uv, rsync and ssh (when a target needs them); `site.toml` valid; lock present without drift; uncommitted changes; HEAD pushed. Per target (all, or the one given): login, PHP CLI version (rsync), server config present, `url` is https, install/upgrade pending, and the deployed commit vs HEAD (from release.json). Exits 1 if any check fails. |
+| `ym gh-setup [TARGET ...] [--repo OWNER/NAME] [--rotate] [--dry-run]` | Set up the GitHub side of the deploy workflow with the GitHub CLI (offers `gh auth login`): per target, create its environment (`prod` → `production`, others → `staging`), install a new CI key on the server and store it as `DEPLOY_SSH_KEY`, and store the host keys from `~/.ssh/known_hosts` as `DEPLOY_KNOWN_HOSTS`. Default targets: `prod` and `staging`. See [deploy from CI](#push-to-github-and-deploy-from-ci). |
 | `ym update [--commit] [--core-only \| --plugins-only]` | Routine update in one step: core to the latest stable release, plugins to their newest commits, build, then a summary of the changes (`--commit` commits them with that summary as the message). |
 | `ym plugin list [--json] [--check]` / `ym plugin enable NAME` / `ym plugin disable NAME` | List plugins with header version, source, ref and locked commit (`--check` asks upstream for newer commits and exits **10** if any; `--json` for scripts); switch a plugin's `active` flag in `site.toml` (comments kept). The next deploy applies it. |
 | `ym plugin search [QUERY] [--category SLUG] [--refresh] [--json]` | Search the [awesome-yourls](https://github.com/YOURLS/awesome) plugin catalog by name, tags and description (name matches rank first). Shows category, badges (official / tested), link and description, and marks plugins already in `site.toml`. `--category` alone lists a category. The catalog is cached for a day in `~/.cache/yourls-manager/` (`--refresh` downloads it again). Works outside a site repo too. |
