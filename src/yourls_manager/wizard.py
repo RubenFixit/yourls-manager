@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import SITE_FILE, load_site
+from .targets import describe
 from .util import EXIT_OK, YMError, console, iso_utc
 
 Ask = Callable[[str, str | None], str]
@@ -295,6 +296,16 @@ def run_wizard(
         res.remaining.append(f"fix {dest / SITE_FILE}, then run `ym setup` again to resume")
         return _summary(res)
     has_prod = TARGET in cfg.targets
+    if not has_prod:
+        console.info("")
+        console.info(f"site.toml has no {TARGET} target yet (where and how the site deploys).")
+        add_argv = [*site, "target", "add", TARGET]
+        if _yes(ask, f"Add the {TARGET} target now?"):
+            code = step(add_argv)
+            if code != EXIT_OK:
+                return failed(code, add_argv)
+            cfg = load_site(dest)
+            has_prod = TARGET in cfg.targets
     remote_prod = has_prod and not cfg.targets[TARGET].is_local
 
     # ---- ssh key authentication
@@ -305,12 +316,12 @@ def run_wizard(
             from .transport.sftp import password_env
 
             console.info(
-                f"ym can't log in to {_describe(cfg.targets[TARGET])} without a password."
+                f"ym can't log in to {describe(cfg.targets[TARGET])} without a password."
                 f" An SSH key is best (or set ${password_env(TARGET)} for each command)."
             )
         else:
             console.info(
-                f"ym needs SSH key authentication to {_describe(cfg.targets[TARGET])}"
+                f"ym needs SSH key authentication to {describe(cfg.targets[TARGET])}"
                 " (it never prompts for passwords)."
             )
         if _yes(ask, "Set up an SSH key for it now?"):
@@ -328,13 +339,13 @@ def run_wizard(
     elif adopting:
         adopt_argv: list[str] | None = None
         if has_prod and _yes(
-            ask, f"Adopt the install at the prod target ({_describe(cfg.targets[TARGET])})?"
+            ask, f"Adopt the install at the prod target ({describe(cfg.targets[TARGET])})?"
         ):
             adopt_argv = [*site, "adopt", "--from-target", TARGET]
         else:
             path = ask(
-                "Path to a local copy of the existing install (empty: stop here and configure"
-                " [deploy.targets.prod] in site.toml first)",
+                "Path to a local copy of the existing install (empty: stop here and add the"
+                f" {TARGET} target first)",
                 None,
             ).strip()
             if path:
@@ -342,7 +353,7 @@ def run_wizard(
         if adopt_argv is None:
             res.resumable = True
             res.remaining += [
-                f"edit {dest / SITE_FILE}: fill in [deploy.targets.prod]",
+                _cmd([*site, "target", "add", TARGET]),
                 "then run `ym setup` again to resume",
             ]
             return _summary(res)
@@ -359,7 +370,7 @@ def run_wizard(
     if not has_prod:
         res.resumable = True
         res.remaining += [
-            f"edit {dest / SITE_FILE}: uncomment and fill in [deploy.targets.prod]",
+            _cmd([*site, "target", "add", TARGET]),
             "then run `ym setup` again to resume (server config, deploy preview)",
         ]
         return _summary(res)
@@ -413,11 +424,6 @@ def run_wizard(
         )
     state.finish()
     return _summary(res)
-
-
-def _describe(spec) -> str:
-    where = f"{spec.user + '@' if spec.user else ''}{spec.host}" if spec.host else "local"
-    return f"{'sftp://' if spec.is_sftp else ''}{where}:{spec.path}"
 
 
 def _summary(res: WizardResult) -> WizardResult:

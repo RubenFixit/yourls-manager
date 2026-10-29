@@ -71,7 +71,8 @@ Only SFTP on your host? Answer `sftp` to the deploy type question. `ym target lo
 [SFTP targets](#sftp-targets).
 
 If you leave the deploy host empty when `ym new` asks, the `prod` target is written to
-`site.toml` commented out. Uncomment and fill it in before `ym target config prod`.
+`site.toml` commented out. Add it with `ym target add prod` (it asks for host, user and
+web root) before `ym target config prod`. `ym target list` shows the targets.
 
 ### 3B. Adopt and update an existing YOURLS install
 
@@ -91,7 +92,7 @@ Or by hand:
 ```sh
 ym new my-site --data include_example_plugins=false
 cd my-site
-# If you didn't give a deploy host to `ym new`, fill in [deploy.targets.prod] in site.toml now.
+ym target add prod                  # only if you didn't give a deploy host to `ym new`
 ym adopt --from-target prod         # snapshot the live site; vendor its core version; fill overlay/
 less adopt-review/REPORT.md         # versions, plugins, files to merge by hand, parity summary
 ym target config prod --from-existing   # copy the live config to the server-local location
@@ -298,6 +299,8 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 | `ym target login TARGET [--key PATH]` | Check that ym can log in to the target without prompts (formerly `ym ssh-setup`). rsync targets need SSH key login. If it fails: create a key with `ssh-keygen` (default `~/.ssh/id_ed25519`) when there is none, install it with `ssh-copy-id` (asks for the SSH password once and to trust the host key; falls back to plain `ssh` where `ssh-copy-id` is missing), then check again. Explains the fix when a passphrase-protected key isn't in an agent (`ssh-add`) or a non-default key needs an `~/.ssh/config` entry. For `sftp` targets the check is an SFTP login (SFTP-only accounts have no shell); a password in `YM_<TARGET>_PASSWORD` also works there, so the key is optional. Unknown host keys are shown with their SHA256 fingerprint for you to trust, and the key is appended to `.ssh/authorized_keys` over SFTP after one password login (`.ssh` 700, file 600). |
 | `ym new [DEST] [--template SRC] [--vcs-ref REF] [--data K=V ...] [--defaults] [--no-vendor] [--no-git]` | Create a site repo from the template. The default template is `gh:RubenFixit/yourls-site-template`; override it with `--template` or the `YM_TEMPLATE` environment variable. Copier asks its questions unless you pass `--defaults`. Then `ym new` runs `ym core` + `ym sync` (skip with `--no-vendor`), runs `git init -b main` and makes the first commit (skip with `--no-git`; skipped with a warning if no Git identity is set), and tries `uv lock`. Refuses a non-empty `DEST`. |
 | `ym template-update [--vcs-ref REF] [--manager-version vX.Y.Z] [--defaults]` | Run `copier update` in the site repo. Refuses if the Git tree is dirty. `--manager-version` also bumps the yourls-manager pin. Then it tries `uv lock` and prints `git diff --stat` for you to review and commit. |
+| `ym target add NAME [--type rsync\|sftp] [--host H] [--user U] [--port N] [--path WEBROOT] [--php PHP] [--url URL] [--accept any\|release]` | Append a `[deploy.targets.NAME]` block to `site.toml` (comments kept; restored if the result doesn't validate). On a terminal it asks for what you leave out; otherwise `--path` is required, plus `--host` for sftp. No `--host` means an rsync target on this machine. `prod` defaults to `accept = "release"`, other targets to `"any"`. |
+| `ym target list [--json]` | Show each target's type, location, URL, deploy policy and whether CI deploys it. |
 | `ym target config TARGET [--force] [--from-existing] [--db-host H] [--db-name N] [--db-user U] [--db-prefix P] [--admin-user U]` | Create the server-local config at the target's `config_file` from `server/config.example.php`. It fills in the DB settings, `YOURLS_SITE`, a fresh `YOURLS_COOKIEKEY` and one admin user. Passwords come from `YM_DB_PASSWORD` / `YM_ADMIN_PASSWORD` or a prompt, never from the command line. The admin password is hashed by the target's PHP (for `sftp` targets: locally with bcrypt, cost 10, in the same `phpass:` format). The file is written with mode 0600. It won't overwrite an existing file unless you pass `--force`, which first keeps a copy as `<file>.bak-<UTC timestamp>`. `--from-existing` copies the live install's `user/config.php` (or `includes/config.php`) to `config_file` instead; use it when adopting. |
 | `ym adopt (--from-target TARGET \| --from-dir PATH) [--ignore GLOB ...] [--active A,B,...] [--dry-run]` | Bring an existing YOURLS install under management, inside a repo made by `ym new`. `--active` names the plugins that are active on the install (needed for `sftp` targets; also skips reading them with the PHP helper elsewhere). See [below](#ym-adopt). |
 

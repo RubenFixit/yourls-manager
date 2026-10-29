@@ -52,6 +52,10 @@ class FakeYm:
         cmd = " ".join(words[:2]) if words[0] == "target" else words[0]
         if cmd == self.fail:
             return 1
+        if cmd == "target add":
+            site = Path(argv[argv.index("--site-dir") + 1])
+            with (site / "site.toml").open("a") as f:
+                f.write(PROD)
         if argv[0] == "new":
             dest = Path(argv[1])
             dest.mkdir(parents=True)
@@ -109,19 +113,29 @@ def test_adopt_from_prod(tmp_path, capsys):
 def test_adopt_local_dir_without_prod(tmp_path):
     ym = FakeYm(prod=False)
     install = tmp_path / "old-install"
-    ask = Script(["adopt", "s", str(install)])
+    ask = Script(["adopt", "s", "n", str(install)])  # add prod target? no
     res = run_wizard(ask, invoke=ym, cwd=tmp_path)
     site = str(tmp_path / "s")
     assert ym.calls[1] == ["--site-dir", site, "adopt", "--from-dir", str(install)]
     assert len(ym.calls) == 2  # no prod target: target config/deploy are left to do
-    assert any("[deploy.targets.prod]" in r for r in res.remaining)
+    assert any("target add prod" in r for r in res.remaining)
 
 
 def test_adopt_stop_to_configure_prod(tmp_path):
     ym = FakeYm(prod=False)
-    res = run_wizard(Script(["adopt", "s", ""]), invoke=ym, cwd=tmp_path)
+    res = run_wizard(Script(["adopt", "s", "n", ""]), invoke=ym, cwd=tmp_path)
     assert len(ym.calls) == 1
     assert res.resumable and any("ym setup" in r for r in res.remaining)
+    assert any("target add prod" in r for r in res.remaining)
+
+
+def test_new_site_adds_missing_prod_target(tmp_path):
+    ym = FakeYm(prod=False)
+    # add prod? yes; target config? no; dry run? no
+    res = run_wizard(Script(["new", "s", "y", "n", "n"]), invoke=ym, cwd=tmp_path)
+    site = str(tmp_path / "s")
+    assert ym.calls[1] == ["--site-dir", site, "target", "add", "prod"]
+    assert res.exit_code == 0
 
 
 def test_config_exists_skips_server_config(tmp_path):

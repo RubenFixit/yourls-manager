@@ -434,9 +434,35 @@ def _target_parsers(sub, common: argparse.ArgumentParser) -> None:
     p = sub.add_parser(
         "target",
         parents=[common],
-        help="deploy targets: log in, write the server-local config",
+        help="deploy targets: add, list, log in, write the server-local config",
     )
     tsub = p.add_subparsers(dest="target_cmd", metavar="ACTION", required=True)
+    q = tsub.add_parser(
+        "add",
+        parents=[common],
+        help="add a deploy target to site.toml",
+        description=(
+            "Append a [deploy.targets.NAME] block to site.toml (comments are kept). On a"
+            " terminal ym asks for what isn't given; otherwise --path is required (and"
+            " --host for sftp). Without --host an rsync target deploys on this machine."
+            ' The prod target defaults to accept = "release".'
+        ),
+    )
+    q.add_argument("name", metavar="NAME")
+    q.add_argument("--type", choices=("rsync", "sftp"), help="default: rsync")
+    q.add_argument("--host", help="server host name (omit for a local rsync target)")
+    q.add_argument("--user", help="login user (default: ~/.ssh/config or your local user)")
+    q.add_argument("--port", type=int, help="SSH/SFTP port (default: 22)")
+    q.add_argument("--path", help="web root, relative to the login directory or absolute")
+    q.add_argument("--php", help="rsync targets: PHP CLI on the server (default: php)")
+    q.add_argument("--url", help="public URL on this target (default: [site].url)")
+    q.add_argument(
+        "--accept",
+        choices=("any", "release"),
+        help='deploy policy (default: "release" for prod, else "any")',
+    )
+    q = tsub.add_parser("list", parents=[common], help="show the deploy targets in site.toml")
+    q.add_argument("--json", action="store_true", help="machine-readable output")
     q = tsub.add_parser(
         "login",
         parents=[common],
@@ -716,6 +742,28 @@ def _dispatch(args: argparse.Namespace) -> int:
 
 
 def _target(cfg: SiteConfig, args: argparse.Namespace) -> int:
+    if args.target_cmd == "add":
+        from .targets import TargetOptions, add_target
+
+        opts = TargetOptions(
+            type=args.type,
+            host=args.host,
+            user=args.user,
+            port=args.port,
+            path=args.path,
+            php=args.php,
+            url=args.url,
+            accept=args.accept,
+        )
+        add_target(cfg, args.name, opts, ask=_ask if _is_tty() else None)
+        return EXIT_OK
+
+    if args.target_cmd == "list":
+        from .targets import list_targets
+
+        list_targets(cfg, as_json=args.json)
+        return EXIT_OK
+
     if args.target_cmd == "login":
         from .login import check_login, login
 
@@ -752,6 +800,16 @@ def _target(cfg: SiteConfig, args: argparse.Namespace) -> int:
     raise YMError(f"unknown target action {args.target_cmd}")  # pragma: no cover
 
 
+def _is_tty() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _ask(question: str, default: str | None) -> str:
+    suffix = f" [{default}]" if default else ""
+    answer = input(f"{question}{suffix}: ")
+    return answer if answer.strip() else (default or "")
+
+
 def _confirm(question: str) -> bool:
     while True:
         answer = input(f"{question} [Y/n]: ").strip().lower()
@@ -782,12 +840,7 @@ def _setup(start: Path | None = None) -> int:
             " `ym target config` and `ym deploy` directly"
         )
 
-    def ask(question: str, default: str | None) -> str:
-        suffix = f" [{default}]" if default else ""
-        answer = input(f"{question}{suffix}: ")
-        return answer if answer.strip() else (default or "")
-
-    return run_wizard(ask, invoke=main, start=start).exit_code
+    return run_wizard(_ask, invoke=main, start=start).exit_code
 
 
 def main(argv: Sequence[str] | None = None) -> int:
