@@ -42,7 +42,7 @@ def _release_tag_flags(p: argparse.ArgumentParser, *, sub: bool) -> None:
 
 def _sync_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("--update", action="store_true", help="re-resolve refs to latest commits")
-    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--dry-run", action="store_true", help="show what would change, then stop")
     p.add_argument("--force", action="store_true", help="ignore uncommitted changes in yourls/")
 
 
@@ -50,6 +50,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ym",
         description="Manage a Git-tracked YOURLS site: vendor core and plugins, build, deploy.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "exit codes:\n"
+            "  0   ok\n"
+            "  1   error\n"
+            "  2   usage or configuration error\n"
+            "  10  updates available (update --check, plugin list --check)"
+        ),
     )
     parser.add_argument("--version", action="version", version=f"yourls-manager {__version__}")
     _global_options(parser, suppress=False)
@@ -58,17 +66,34 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
 
-    p = sub.add_parser("core", parents=[common], help="vendor YOURLS core at a tag")
+    p = sub.add_parser(
+        "core",
+        parents=[common],
+        help="vendor YOURLS core at a tag",
+        description=(
+            "Fetch YOURLS core at a tag and replace yourls/, keeping the managed plugin"
+            " directories and applying [core].exclude. Updates the lock and [core].version."
+            " Refuses when yourls/ has uncommitted changes (Git is the backup) unless --force."
+        ),
+    )
     p.add_argument(
         "core_version",
         nargs="?",
         metavar="VERSION",
         help="tag to vendor, or 'latest' (default: site.toml [core].version)",
     )
-    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--dry-run", action="store_true", help="show what would change, then stop")
     p.add_argument("--force", action="store_true", help="ignore uncommitted changes in yourls/")
 
-    p = sub.add_parser("build", parents=[common], help="assemble dist/ from yourls/ + overlay/")
+    p = sub.add_parser(
+        "build",
+        parents=[common],
+        help="assemble dist/ from yourls/ + overlay/",
+        description=(
+            "Clean the output directory, then copy yourls/ and overlay/ into it (overlay"
+            " wins; -v lists each override). Refuses when yourls/ doesn't match the lock."
+        ),
+    )
     p.add_argument("--out", type=Path, metavar="DIR", help="output dir (default: [build].out)")
     p.add_argument(
         "--allow-drift", action="store_true", help="build even if yourls/ differs from the lock"
@@ -82,9 +107,12 @@ def build_parser() -> argparse.ArgumentParser:
             "rsync targets: build, preflight, DB backup, rsync, DB upgrade, plugins, verify."
             " sftp targets: build, upload changed files, delete files ym deployed before,"
             " then print the browser steps (install/upgrade, plugins) and verify."
+            " Refuses uncommitted changes unless --allow-dirty; a target with"
+            ' accept = "release" only takes a commit with a final release tag. Afterwards'
+            " the local branch deployed/<target> points at the deployed commit."
         ),
     )
-    p.add_argument("target")
+    p.add_argument("target", help="target name ([deploy.targets.NAME] in site.toml)")
     g = p.add_argument_group("all targets")
     g.add_argument("--dry-run", action="store_true", help="show what would change, then stop")
     g.add_argument("--no-build", action="store_true", help="deploy the existing build output")
@@ -110,8 +138,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="stat every deployed file and re-upload the ones changed on the server",
     )
 
-    p = sub.add_parser("verify", parents=[common], help="health check + redirect tests")
-    p.add_argument("target", nargs="?")
+    p = sub.add_parser(
+        "verify",
+        parents=[common],
+        help="health check + redirect tests",
+        description=(
+            'GET /health.php (expects {"ok": true}), then check each case in'
+            " tests/redirects.toml. Redirects are not followed."
+        ),
+    )
+    p.add_argument("target", nargs="?", help="target whose url to check")
     p.add_argument("--url", help="base URL to check instead of a target's url")
 
     p = sub.add_parser(
@@ -140,16 +176,24 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("names", nargs="*", metavar="NAME", help="only these plugins (default: all)")
     _sync_flags(q)
     q = psub.add_parser(
-        "apply", parents=[common], help="make the target's active plugins exactly site.toml's"
+        "apply",
+        parents=[common],
+        help="make the target's active plugins exactly site.toml's",
+        description=(
+            "rsync targets: activate and deactivate plugins with the PHP helper so the active"
+            " set is exactly the plugins marked active in site.toml (deploy does this too)."
+            " sftp targets have no PHP CLI: this prints what to change in the admin UI."
+        ),
     )
-    q.add_argument("target")
+    q.add_argument("target", help="target name")
     q = psub.add_parser(
         "search",
         parents=[common],
         help="search the awesome-yourls plugin catalog",
         description=(
             "Search the awesome-yourls catalog (cached for a day) by name, tags and"
-            " description. Plugins already in site.toml are marked."
+            " description (name matches rank first). Plugins already in site.toml are marked."
+            " --category alone lists a category. Works outside a site repo."
         ),
     )
     q.add_argument("query", nargs="*", help="search words (all must match)")
@@ -164,7 +208,10 @@ def build_parser() -> argparse.ArgumentParser:
             "Add a plugin by its awesome-yourls catalog name (exact, case-insensitive or"
             " unique prefix) or by a clone URL / project page (GitHub, GitLab, Codeberg,"
             " Bitbucket; /tree/<ref>/<dir> sets ref and path). plugin.php is looked for at"
-            " the top of the repo, else one directory down."
+            " the top of the repo, else one directory down (several: asks on a terminal, else"
+            " needs --path). Shows the plugin header, appends a [[plugins]] block to site.toml"
+            " and vendors it. Refuses duplicates and directory names used by core or"
+            " overlay/. Catalog entries that link to a web page need the repo URL instead."
         ),
     )
     q.add_argument("source", metavar="NAME|URL", help="catalog name or git/project URL")
@@ -178,17 +225,40 @@ def build_parser() -> argparse.ArgumentParser:
         help="only edit site.toml; vendor later with ym plugin sync",
     )
     q.add_argument("--refresh", action="store_true", help="download the catalog again")
-    q = psub.add_parser("remove", parents=[common], help="remove a plugin from the site")
-    q.add_argument("name")
+    q = psub.add_parser(
+        "remove",
+        parents=[common],
+        help="remove a plugin from the site",
+        description=(
+            "Delete the plugin's [[plugins]] block from site.toml and its vendored copy"
+            " (refused if that copy has uncommitted changes). The next deploy deactivates it"
+            " and removes its files; plugin data (options, tables) stays in the database."
+        ),
+    )
+    q.add_argument("name", help="plugin directory name, as in site.toml")
     q.add_argument("--keep-files", action="store_true", help="keep the vendored copy")
-    for act in ("enable", "disable"):
-        q = psub.add_parser(act, parents=[common], help=f"{act} a plugin in site.toml")
-        q.add_argument("name")
+    for act, value in (("enable", "true"), ("disable", "false")):
+        q = psub.add_parser(
+            act,
+            parents=[common],
+            help=f"{act} a plugin in site.toml",
+            description=(
+                f"Set active = {value} in the plugin's site.toml block (comments kept)."
+                " The next deploy applies it."
+            ),
+        )
+        q.add_argument("name", help="plugin directory name, as in site.toml")
 
     p = sub.add_parser(
         "update",
         parents=[common],
         help="update core and plugins to their newest versions and build (--check: report only)",
+        description=(
+            "Update core to the newest stable release and plugins to their newest commits,"
+            " build, and summarize the lock changes. --check is read-only: it asks upstream"
+            " with git ls-remote (skipping -rc/-beta core tags) and exits 10 if anything"
+            " can be updated."
+        ),
     )
     p.add_argument("--commit", action="store_true", help="commit the update with a summary")
     g = p.add_mutually_exclusive_group()
@@ -215,7 +285,10 @@ def build_parser() -> argparse.ArgumentParser:
     _release_tag_flags(p, sub=False)
     rsub = p.add_subparsers(dest="release_cmd", metavar="ACTION")
     q = rsub.add_parser(
-        "promote", parents=[common], help="tag the newest rc's commit as its final release"
+        "promote",
+        parents=[common],
+        help="tag the newest rc's commit as its final release",
+        description="Tag the newest rc's commit as its final release: vX-N-rc.k -> vX-N.",
     )
     _release_tag_flags(q, sub=True)
     rsub.add_parser(
@@ -267,8 +340,9 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Check local tools, site.toml, the lock and drift, uncommitted and unpushed"
             " changes, and per target: login, PHP CLI (rsync), server config, https url,"
-            " install/upgrade state, and the deployed commit vs HEAD. Changes nothing."
-            " --local skips the targets (offline)."
+            " install/upgrade state, and the deployed commit vs HEAD. With [artifact]"
+            " enabled = true, also that a CI job publishes the artifacts. Changes nothing."
+            " --local skips the targets (offline) and exits 1 on drift."
         ),
     )
     p.add_argument("target", nargs="?", help="check only this target (default: all)")
@@ -288,7 +362,8 @@ def build_parser() -> argparse.ArgumentParser:
             "Create a GitHub repository for this site with the GitHub CLI (private unless"
             " --public), add it as origin (or create the one origin already names), and push"
             " the current branch. Tags are not pushed. Nothing about deploying changes: that"
-            " stays manual unless you run `ym ci setup`."
+            " stays manual unless you run `ym ci setup`. GitHub only: on a ci_provider ="
+            " gitlab site it refuses and points to the site README."
         ),
     )
     q.add_argument("--name", help="repository name (default: the site directory name)")
@@ -313,7 +388,8 @@ def build_parser() -> argparse.ArgumentParser:
             "a dedicated CI key, install it on the server over your working login, check it\n"
             "logs in, store it as DEPLOY_SSH_KEY, store the host keys from ~/.ssh/known_hosts\n"
             "as DEPLOY_KNOWN_HOSTS, and set `ci = true` on the target in site.toml. Offers\n"
-            "`gh auth login`, and `ym repo create` when the site has no GitHub repo yet."
+            "`gh auth login`, and `ym repo create` when the site has no GitHub repo yet.\n"
+            "GitHub only: refuses on ci_provider = gitlab (see the site README) or none."
         ),
         epilog=(
             "examples:\n"
@@ -349,7 +425,9 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
         description=(
             "Create a new site repo from yourls-site-template with Copier (run as `uvx copier`),\n"
             "then vendor YOURLS core and plugins (ym core + ym plugin sync), best-effort\n"
-            "`uv lock`, and make the initial git commit. DEST must be empty or not exist."
+            "`uv lock`, and make the initial git commit (skipped with a warning when no Git\n"
+            "identity is set). Copier asks its questions unless --defaults. DEST must be\n"
+            "empty or not exist."
         ),
         epilog=(
             "examples:\n"
@@ -456,14 +534,14 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
 
 
 def _login_args(p: argparse.ArgumentParser) -> None:
-    p.add_argument("target")
+    p.add_argument("target", help="target name")
     p.add_argument(
         "--key", type=Path, metavar="PATH", help="private key path (default: ~/.ssh/id_ed25519)"
     )
 
 
 def _config_args(p: argparse.ArgumentParser) -> None:
-    p.add_argument("target")
+    p.add_argument("target", help="target name")
     p.add_argument(
         "--force", action="store_true", help="replace an existing file (kept as .bak-<UTC>)"
     )
@@ -499,7 +577,7 @@ def _target_parsers(sub, common: argparse.ArgumentParser) -> None:
             ' The prod target defaults to accept = "release".'
         ),
     )
-    q.add_argument("name", metavar="NAME")
+    q.add_argument("name", metavar="NAME", help="target name, e.g. prod or staging")
     q.add_argument("--type", choices=("rsync", "sftp"), help="default: rsync")
     q.add_argument("--host", help="server host name (omit for a local rsync target)")
     q.add_argument("--user", help="login user (default: ~/.ssh/config or your local user)")
@@ -518,7 +596,12 @@ def _target_parsers(sub, common: argparse.ArgumentParser) -> None:
         metavar="PATH",
         help="remote path deploys never delete (repeatable; default: .well-known/)",
     )
-    q = tsub.add_parser("list", parents=[common], help="show the deploy targets in site.toml")
+    q = tsub.add_parser(
+        "list",
+        parents=[common],
+        help="show the deploy targets in site.toml",
+        description="Each target's type, location, url, deploy policy and whether CI deploys it.",
+    )
     q.add_argument("--json", action="store_true", help="machine-readable output")
     q = tsub.add_parser(
         "login",

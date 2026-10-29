@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- `docs/cli.md`: command reference generated from the argparse help texts by `python -m yourls_manager.clidoc` (`--check` exits 1 when it is stale; a test enforces it).
+
+### Changed
+
+- Every command and argument has help text; `--help` descriptions now carry the details from the README's command tables, and `ym --help` lists the exit codes.
+
 ## [0.8.0] - 2026-10-29
 
 Release artifacts for sites that ym doesn't deploy, and the template's CI provider choice (template v0.7.0). The 0.7 deprecated spellings are gone.
