@@ -10,9 +10,19 @@ All notable changes to this project are documented here. The format follows
 
 - `ym plugin list`, `ym plugin enable NAME`, `ym plugin disable NAME` (edits `active` in
   site.toml, keeping comments; applied on the next deploy).
-- `ym plugin add URL [--name] [--ref] [--path] [--inactive]`: add a plugin from a clone URL or
-  a GitHub/GitLab/Codeberg/Bitbucket project page (`/tree/<ref>/<dir>` sets ref and path);
-  rolled back if the plugin can't be vendored.
+- `ym plugin search [QUERY] [--category SLUG] [--refresh] [--json]`: search the awesome-yourls
+  plugin catalog (cached for a day); plugins already in site.toml are marked.
+- `ym plugin add NAME|URL [--name] [--ref] [--path] [--inactive] [--no-sync]`: add a plugin by
+  catalog name or from a clone URL / GitHub/GitLab/Codeberg/Bitbucket project page
+  (`/tree/<ref>/<dir>` sets ref and path). Finds plugin.php at the top or one directory down
+  (asks when there are several), shows its header, and is rolled back if it can't be vendored.
+- `ym doctor [TARGET]`: read-only report of tools, site repo (site.toml, lock and drift,
+  uncommitted and unpushed changes) and targets (login, PHP, server config, https, install /
+  upgrade state, deployed commit vs HEAD); exits 1 on failures.
+
+### Changed
+
+- New dependency: PyYAML (to read the plugin catalog).
 - `ym plugin remove NAME [--keep-files]`: delete the plugin's `[[plugins]]` block and its
   vendored copy; the next deploy deactivates it and removes its files (its data stays).
 

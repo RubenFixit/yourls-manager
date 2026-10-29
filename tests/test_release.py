@@ -278,10 +278,12 @@ def test_parse_plugin_url(url, expected):
 def test_plugin_add(site, upstream, capsys):
     S = ["--site-dir", str(site)]
     mono = upstream("mono")
-    mono.commit({"plug-b/plugin.php": "<?php // b\n", "README.md": "x"})
-    assert main([*S, "plugin", "add", mono.url]) == 1  # no plugin.php at the top
-    assert "no plugin.php" in capsys.readouterr().err
-    assert "[[plugins]]" not in (site / "site.toml").read_text()  # rolled back
+    mono.commit({"plug-b/plugin.php": "<?php // b\n", "plug-c/plugin.php": "<?php // c\n"})
+    assert main([*S, "plugin", "add", mono.url]) == 2  # several plugins, no terminal
+    assert "--path: plug-b, plug-c" in capsys.readouterr().err
+    assert "[[plugins]]" not in (site / "site.toml").read_text()
+    assert main([*S, "plugin", "add", mono.url, "--path", "nope"]) == 2
+    assert "[[plugins]]" not in (site / "site.toml").read_text()
     assert main([*S, "plugin", "add", mono.url, "--path", "plug-b", "--inactive"]) == 0
     assert (site / "yourls/user/plugins/plug-b/plugin.php").is_file()
     assert 'path   = "plug-b"\nactive = false' in (site / "site.toml").read_text()

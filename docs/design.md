@@ -363,10 +363,15 @@ plugins, YOURLS version, DB version. ym would read it over SFTP for adopt/status
 
 ### 11.1 Plugins: `ym plugin …`
 
+Status: search, add, remove, enable, disable and list are built. Not yet: `list --json`,
+`--check` and the header-version column, and `plugin apply` (still `ym plugins TARGET`).
+
 Catalog: `https://raw.githubusercontent.com/YOURLS/awesome/main/data/plugins.yml` (the
 awesome-yourls data file: `name`, `url`, `description`, `category`, `tags`, `official`,
 `tested`; categories block with labels). Cached in `$XDG_CACHE_HOME/yourls-manager/` for a
-day; `--refresh` forces a fetch. Parsing adds the `PyYAML` dependency.
+day; `--refresh` forces a fetch; a stale cache is used (with a warning) when the download
+fails. `YM_CATALOG_URL` overrides the source (tests). Parsing adds the `PyYAML` dependency.
+Some entries link to a blog page rather than a repo; `add` says so and asks for the git URL.
 
 | Command | Behavior |
 |---|---|
@@ -388,6 +393,9 @@ diff (core from→to, each plugin old→new short sha, added/removed). Nothing t
 from the summary ("Update YOURLS 1.10.5 → 1.10.6; timezones a1b2c3d → d4e5f6a").
 
 ### 11.3 `ym doctor [TARGET]`
+
+Status: built (`doctor.py`). ssh is checked only when a remote rsync target exists; an
+unreachable URL is a warning until something has been deployed there.
 
 Read-only report, one line per check with ok / warn / fail and a fix hint; exit 1 on any fail.
 Local: git, uv, rsync (only if an rsync target exists), ssh; site.toml valid; lock present and no

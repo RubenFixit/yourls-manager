@@ -103,18 +103,44 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("target", nargs="?")
     p.add_argument("--url", help="base URL to check instead of a target's url")
 
-    p = sub.add_parser("plugin", parents=[common], help="list plugins; enable or disable one")
+    p = sub.add_parser(
+        "plugin", parents=[common], help="search, add, remove, list, enable or disable plugins"
+    )
     psub = p.add_subparsers(dest="plugin_cmd", metavar="ACTION", required=True)
     psub.add_parser("list", parents=[common], help="plugins in site.toml with source and lock")
-    q = psub.add_parser("add", parents=[common], help="add a plugin from a git or project URL")
-    q.add_argument(
-        "url",
-        help="clone URL or project page (GitHub/GitLab/Codeberg/Bitbucket)",
+    q = psub.add_parser(
+        "search",
+        parents=[common],
+        help="search the awesome-yourls plugin catalog",
+        description=(
+            "Search the awesome-yourls catalog (cached for a day) by name, tags and"
+            " description. Plugins already in site.toml are marked."
+        ),
     )
-    q.add_argument("--name", help="plugin directory name (default: from the URL)")
+    q.add_argument("query", nargs="*", help="search words (all must match)")
+    q.add_argument("--category", metavar="SLUG", help="limit to a category (lists it alone)")
+    q.add_argument("--refresh", action="store_true", help="download the catalog again")
+    q.add_argument("--json", action="store_true", help="machine-readable output")
+    q = psub.add_parser(
+        "add",
+        parents=[common],
+        help="add a plugin by catalog name or git/project URL",
+        description=(
+            "Add a plugin by its awesome-yourls catalog name (exact, case-insensitive or"
+            " unique prefix) or by a clone URL / project page (GitHub, GitLab, Codeberg,"
+            " Bitbucket; /tree/<ref>/<dir> sets ref and path). plugin.php is looked for at"
+            " the top of the repo, else one directory down."
+        ),
+    )
+    q.add_argument("source", metavar="NAME|URL", help="catalog name or git/project URL")
+    q.add_argument("--name", help="plugin directory name (default: from plugin.php's folder)")
     q.add_argument("--ref", help="branch, tag or commit (default: from the URL, else HEAD)")
     q.add_argument("--path", help="subdirectory holding plugin.php")
     q.add_argument("--inactive", action="store_true", help="add it with active = false")
+    q.add_argument(
+        "--no-sync", action="store_true", help="only edit site.toml; vendor later with ym sync"
+    )
+    q.add_argument("--refresh", action="store_true", help="download the catalog again")
     q = psub.add_parser("remove", parents=[common], help="remove a plugin from the site")
     q.add_argument("name")
     q.add_argument("--keep-files", action="store_true", help="keep the vendored copy")
@@ -147,6 +173,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("plugins", parents=[common], help="apply the active plugin set on a target")
     p.add_argument("target")
+
+    p = sub.add_parser(
+        "doctor",
+        parents=[common],
+        help="read-only health report: tools, site repo, targets (exit 1 on failures)",
+        description=(
+            "Check local tools, site.toml, the lock and drift, uncommitted and unpushed"
+            " changes, and per target: login, PHP CLI (rsync), server config, https url,"
+            " install/upgrade state, and the deployed commit vs HEAD. Changes nothing."
+        ),
+    )
+    p.add_argument("target", nargs="?", help="check only this target (default: all)")
 
     _onboarding_parsers(sub, common)
     return parser
@@ -378,6 +416,23 @@ def _dispatch(args: argparse.Namespace) -> int:
             url = args.url
         return EXIT_OK if verify(url, cases) else EXIT_ERROR
 
+    if cmd == "doctor":
+        from .doctor import doctor
+
+        start = args.site_dir.resolve() if args.site_dir else None
+        return EXIT_OK if doctor(start, args.target) else EXIT_ERROR
+
+    if cmd == "plugin" and args.plugin_cmd == "search":
+        from .catalog import plugin_search
+
+        try:
+            site_cfg = _load(args)
+        except UsageError:
+            site_cfg = None  # searching works outside a site repo too
+        plugin_search(site_cfg, " ".join(args.query), category=args.category,
+                      refresh=args.refresh, as_json=args.json)  # fmt: skip
+        return EXIT_OK
+
     cfg = _load(args)
 
     if cmd == "status":
@@ -451,8 +506,17 @@ def _dispatch(args: argparse.Namespace) -> int:
         if args.plugin_cmd == "add":
             from .plugincmd import add_plugin
 
-            add_plugin(cfg, args.url, name=args.name, ref=args.ref, path=args.path,
-                       active=not args.inactive)  # fmt: skip
+            add_plugin(
+                cfg,
+                args.source,
+                name=args.name,
+                ref=args.ref,
+                path=args.path,
+                active=not args.inactive,
+                sync=not args.no_sync,
+                choose=_choose if sys.stdin.isatty() and sys.stdout.isatty() else None,
+                refresh=args.refresh,
+            )
             return EXIT_OK
         if args.plugin_cmd == "remove":
             from .plugincmd import remove_plugin
@@ -535,6 +599,18 @@ def _confirm(question: str) -> bool:
             return True
         if answer in ("n", "no"):
             return False
+
+
+def _choose(question: str, options: list[str]) -> str:
+    console.info(question)
+    for i, opt in enumerate(options, 1):
+        console.info(f"  {i}) {opt}")
+    while True:
+        answer = input(f"number [1-{len(options)}]: ").strip()
+        if answer.isdigit() and 1 <= int(answer) <= len(options):
+            return options[int(answer) - 1]
+        if answer in options:
+            return answer
 
 
 def _setup(start: Path | None = None) -> int:
