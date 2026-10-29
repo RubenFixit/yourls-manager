@@ -168,13 +168,13 @@ def test_plugin_add_by_name(site, upstream, catalog_env, capsys):
     assert main([*S, "plugin", "add", "timezones", "--no-sync"]) == 0
     out = capsys.readouterr().out
     assert "tz: added Timezones 2.0" not in out and "timezones: added Timezones 2.0" in out
-    assert "ym sync --plugin timezones" in out
+    assert "ym plugin sync timezones" in out
     text = (site / "site.toml").read_text()
     assert f'name   = "timezones"\nrepo   = "{plug.url}"\npath   = "timezones"\n' in text
     assert not (site / "yourls/user/plugins/timezones").exists()
     assert main([*S, "plugin", "add", "Timezones"]) == 2  # same repo + path
     assert "already in site.toml" in capsys.readouterr().err
-    assert main([*S, "sync"]) == 0
+    assert main([*S, "plugin", "sync"]) == 0
     assert (site / "yourls/user/plugins/timezones/plugin.php").is_file()
     # a catalog link that isn't a git repo
     assert main([*S, "plugin", "add", "Blog Plugin"]) == 2
@@ -251,7 +251,7 @@ def test_plugin_list_json_check(site, upstream, capsys):
         toml.read_text() + f'\n[[plugins]]\nname = "p"\nrepo = "{plug.url}"\n\n'
         '[[plugins]]\nname = "sample-plugin"\nactive = false\n'
     )
-    assert main([*S, "sync"]) == 0
+    assert main([*S, "plugin", "sync"]) == 0
     capsys.readouterr()
     assert main([*S, "plugin", "list", "--check"]) == 0
     out = capsys.readouterr().out

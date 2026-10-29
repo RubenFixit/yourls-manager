@@ -641,7 +641,7 @@ def write_report(
         where = {
             "bundled": "core (vendored)",
             "custom": f"overlay/user/plugins/{d.name}/",
-            "managed": "vendored by `ym sync`",
+            "managed": "vendored by `ym plugin sync`",
             "overlay": f"overlay/user/plugins/{d.name}/",
             "invalid": f"{REVIEW_DIR}/user/plugins/{d.name}/",
         }[d.kind]
@@ -744,7 +744,7 @@ core files dropped by `[core].exclude`, *restored* = core files missing from the
 3. Commit: `git add -A && git commit -m "Adopt existing install"`.
 4. If the target has no server-local config yet: `ym target config {tname} --from-existing`.
 5. `ym deploy {tname} --dry-run`, then `ym deploy {tname}`.
-6. Update: `ym core --version latest`, commit, `ym deploy {tname}`.
+6. Update: `ym core latest`, commit, `ym deploy {tname}`.
 
 `{REVIEW_DIR}/` is never deployed (it is outside `overlay/`); commit or delete it.
 """
@@ -819,10 +819,10 @@ def adopt(
         from .core import update_core
         from .plugins import sync_plugins
 
-        console.step(f"ym core --version {tag}")
+        console.step(f"ym core {tag}")
         update_core(cfg, tag)
         cfg = load_site(cfg.root)
-        console.step("ym sync")
+        console.step("ym plugin sync")
         sync_plugins(cfg)
 
         # ---- copy files
@@ -884,7 +884,7 @@ def adopt(
     )
     console.info(f"  ym deploy {tname} --dry-run")
     console.info(f"  ym deploy {tname}")
-    console.info(f"  ym core --version latest && ym deploy {tname}   # then actually update")
+    console.info(f"  ym core latest && ym deploy {tname}   # then actually update")
     return AdoptResult(plan, parity, report, toml_added)
 
 

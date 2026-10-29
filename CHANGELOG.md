@@ -16,6 +16,9 @@ All notable changes to this project are documented here. The format follows
   values on a terminal; `prod` defaults to `accept = "release"`).
 - `ym target list [--json]`: the targets with type, location, URL, policy and CI flag.
 - The setup wizard offers `ym target add prod` when the site has no `prod` target.
+- `ym plugin sync [NAME ...]`, the new name of `ym sync` (plugin names are positional).
+- `ym core VERSION`: the version is positional (`ym core latest`).
+- `ym update --force`: passed to the core and plugin steps (uncommitted changes in `yourls/`).
 
 ### Changed
 
@@ -30,6 +33,8 @@ are hidden from `ym --help` and will be removed in 0.8.
 - `ym plugins TARGET`: use `ym plugin apply TARGET`.
 - `ym ssh-setup TARGET`: use `ym target login TARGET`.
 - `ym server-config TARGET`: use `ym target config TARGET`.
+- `ym sync [--plugin NAME ...]`: use `ym plugin sync [NAME ...]`.
+- `ym core --version V`: use `ym core V` (the option clashed with the global `ym --version`).
 
 ## [0.6.0] - 2026-10-29
 

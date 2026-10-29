@@ -61,17 +61,21 @@ def compute_drift(cfg: SiteConfig, lock: Lock) -> Drift:
     for name, spec in toml_managed.items():
         entry = lock.plugins.get(name)
         if entry is None:
-            d.problems.append(f"plugin {name}: in site.toml but not in lock (run `ym sync`)")
+            d.problems.append(f"plugin {name}: in site.toml but not in lock (run `ym plugin sync`)")
             continue
         if not entry.matches(spec.repo or "", spec.ref, spec.path):
-            d.problems.append(f"plugin {name}: repo/ref/path changed in site.toml (run `ym sync`)")
+            d.problems.append(
+                f"plugin {name}: repo/ref/path changed in site.toml (run `ym plugin sync`)"
+            )
         pdir = plugin_dir(cfg, name)
         if not pdir.is_dir():
-            d.problems.append(f"plugin {name}: directory missing (run `ym sync`)")
+            d.problems.append(f"plugin {name}: directory missing (run `ym plugin sync`)")
         elif tree_sha256(pdir) != entry.tree_sha256:
             d.problems.append(f"plugin {name}: files differ from the locked tree hash")
     for name in sorted(set(lock.plugins) - set(toml_managed)):
-        d.problems.append(f"plugin {name}: in lock but no longer in site.toml (run `ym sync`)")
+        d.problems.append(
+            f"plugin {name}: in lock but no longer in site.toml (run `ym plugin sync`)"
+        )
     return d
 
 

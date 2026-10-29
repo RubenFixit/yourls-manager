@@ -128,7 +128,7 @@ def test_release_flow(site, capsys):
     assert main([*S, "release"]) == 2  # HEAD already released as v1.0.0-1
 
     # core update -> notes show the change, revision resets
-    assert main([*S, "core", "--version", "1.1.0"]) == 0
+    assert main([*S, "core", "1.1.0"]) == 0
     git(site, "add", "-A")
     git(site, "commit", "-q", "-m", "YOURLS 1.1.0")
     capsys.readouterr()
@@ -237,7 +237,7 @@ def test_plugin_remove(site, upstream, capsys):
         toml.read_text() + f'\n[[plugins]]\nname = "p"\nrepo = "{plug.url}"\n\n'
         '# the next one\n[[plugins]]\nname = "hyphens"\n'
     )
-    assert main([*S, "sync"]) == 0
+    assert main([*S, "plugin", "sync"]) == 0
     assert (site / "yourls/user/plugins/p/plugin.php").is_file()
     git(site, "add", "-A")
     git(site, "commit", "-q", "-m", "add p")

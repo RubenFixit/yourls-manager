@@ -59,6 +59,12 @@ def _deprecated(
     return p
 
 
+def _sync_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--update", action="store_true", help="re-resolve refs to latest commits")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--force", action="store_true", help="ignore uncommitted changes in yourls/")
+
+
 def _warn_deprecated(args: argparse.Namespace) -> None:
     dep = getattr(args, "deprecated", None)
     if dep:
@@ -86,25 +92,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("core", parents=[common], help="vendor YOURLS core at a tag")
     p.add_argument(
-        "--version",
-        dest="core_version",
-        metavar="V",
+        "core_version",
+        nargs="?",
+        metavar="VERSION",
         help="tag to vendor, or 'latest' (default: site.toml [core].version)",
     )
+    # deprecated spelling (clashes with the global `ym --version`)
+    p.add_argument("--version", dest="core_version_flag", metavar="V", help=argparse.SUPPRESS)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--force", action="store_true", help="ignore uncommitted changes in yourls/")
 
-    p = sub.add_parser("sync", parents=[common], help="vendor plugins into yourls/user/plugins")
-    p.add_argument(
-        "--plugin",
-        action="append",
-        metavar="NAME",
-        default=[],
-        help="limit to this plugin (repeatable)",
-    )
-    p.add_argument("--update", action="store_true", help="re-resolve refs to latest commits")
-    p.add_argument("--dry-run", action="store_true")
-    p.add_argument("--force", action="store_true", help="ignore uncommitted changes in yourls/")
+    def old_sync_args(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--plugin", dest="names", action="append", metavar="NAME", default=[])
+        _sync_flags(p)
+
+    _deprecated(sub, common, "sync", "plugin sync", old_sync_args,
+                command="plugin", plugin_cmd="sync")  # fmt: skip
 
     p = sub.add_parser("build", parents=[common], help="assemble dist/ from yourls/ + overlay/")
     p.add_argument("--out", type=Path, metavar="DIR", help="output dir (default: [build].out)")
@@ -152,6 +155,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--check", action="store_true", help="ask upstream for newer commits (exit 10 if any)"
     )
     q = psub.add_parser(
+        "sync",
+        parents=[common],
+        help="vendor plugins into yourls/user/plugins (locked commits; --update: newest)",
+        description=(
+            "Vendor the site.toml plugins that have a repo into yourls/user/plugins/<name>, at"
+            " the locked commit while repo/ref/path are unchanged. --update re-resolves refs."
+            " A managed plugin removed from site.toml has its directory deleted."
+        ),
+    )
+    q.add_argument("names", nargs="*", metavar="NAME", help="only these plugins (default: all)")
+    _sync_flags(q)
+    q = psub.add_parser(
         "apply", parents=[common], help="make the target's active plugins exactly site.toml's"
     )
     q.add_argument("target")
@@ -185,7 +200,9 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--path", help="subdirectory holding plugin.php")
     q.add_argument("--inactive", action="store_true", help="add it with active = false")
     q.add_argument(
-        "--no-sync", action="store_true", help="only edit site.toml; vendor later with ym sync"
+        "--no-sync",
+        action="store_true",
+        help="only edit site.toml; vendor later with ym plugin sync",
     )
     q.add_argument("--refresh", action="store_true", help="download the catalog again")
     q = psub.add_parser("remove", parents=[common], help="remove a plugin from the site")
@@ -204,6 +221,7 @@ def build_parser() -> argparse.ArgumentParser:
     g = p.add_mutually_exclusive_group()
     g.add_argument("--core-only", action="store_true", help="only update YOURLS core")
     g.add_argument("--plugins-only", action="store_true", help="only update plugins")
+    p.add_argument("--force", action="store_true", help="ignore uncommitted changes in yourls/")
 
     p = sub.add_parser(
         "release",
@@ -314,8 +332,8 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
         help="create a site repo from the template (copier), vendor core + plugins, git init",
         description=(
             "Create a new site repo from yourls-site-template with Copier (run as `uvx copier`),\n"
-            "then vendor YOURLS core and plugins (ym core + ym sync), best-effort `uv lock`,\n"
-            "and make the initial git commit. DEST must be empty or not exist."
+            "then vendor YOURLS core and plugins (ym core + ym plugin sync), best-effort\n"
+            "`uv lock`, and make the initial git commit. DEST must be empty or not exist."
         ),
         epilog=(
             "examples:\n"
@@ -340,7 +358,7 @@ def _onboarding_parsers(sub, common: argparse.ArgumentParser) -> None:
         help="answer a template question (repeatable), e.g. site_url=https://go.example.com",
     )
     p.add_argument("--defaults", action="store_true", help="use defaults for unanswered questions")
-    p.add_argument("--no-vendor", action="store_true", help="skip `ym core` + `ym sync`")
+    p.add_argument("--no-vendor", action="store_true", help="skip `ym core` + `ym plugin sync`")
     p.add_argument("--no-git", action="store_true", help="skip git init and the initial commit")
 
     p = sub.add_parser(
@@ -603,15 +621,16 @@ def _dispatch(args: argparse.Namespace) -> int:
     if cmd == "core":
         from .core import update_core
 
-        update_core(cfg, args.core_version, dry_run=args.dry_run, force=args.force)
-        return EXIT_OK
-
-    if cmd == "sync":
-        from .plugins import sync_plugins
-
-        sync_plugins(
-            cfg, args.plugin or None, update=args.update, dry_run=args.dry_run, force=args.force
-        )
+        version = args.core_version
+        if args.core_version_flag is not None:
+            if version is not None and version != args.core_version_flag:
+                raise UsageError("give the version once: `ym core VERSION`")
+            console.warn(
+                f"`ym core --version` is deprecated and will be removed in {REMOVED_IN};"
+                f" use `ym core {args.core_version_flag}`"
+            )
+            version = args.core_version_flag
+        update_core(cfg, version, dry_run=args.dry_run, force=args.force)
         return EXIT_OK
 
     if cmd == "build":
@@ -651,6 +670,12 @@ def _dispatch(args: argparse.Namespace) -> int:
         if args.plugin_cmd == "list":
             updates = list_plugins(cfg, check=args.check, as_json=args.json)
             return EXIT_UPDATES if updates else EXIT_OK
+        if args.plugin_cmd == "sync":
+            from .plugins import sync_plugins
+
+            sync_plugins(cfg, args.names or None, update=args.update, dry_run=args.dry_run,
+                         force=args.force)  # fmt: skip
+            return EXIT_OK
         if args.plugin_cmd == "apply":
             from .deploy import get_target
 
@@ -703,7 +728,8 @@ def _dispatch(args: argparse.Namespace) -> int:
     if cmd == "update":
         from .update import update
 
-        update(cfg, commit=args.commit, core=not args.plugins_only, plugins=not args.core_only)
+        update(cfg, commit=args.commit, core=not args.plugins_only, plugins=not args.core_only,
+               force=args.force)  # fmt: skip
         return EXIT_OK
 
     if cmd == "release":

@@ -166,7 +166,7 @@ def test_full_flow(tmp_path, upstream, server, monkeypatch, capsys):
     assert lock["core"]["version"] == "1.0.0" and lock["plugins"] == {}
 
     # ---- sync
-    assert main([*S, "sync"]) == 0
+    assert main([*S, "plugin", "sync"]) == 0
     lock = load_lock(site)
     assert lock["plugins"]["kqs"]["commit"] == kqs_c1
     assert lock["plugins"]["multi"]["path"] == "plug-b"
@@ -175,7 +175,7 @@ def test_full_flow(tmp_path, upstream, server, monkeypatch, capsys):
     assert not (y / "user/plugins/multi/other").exists()
     git(site, "add", "-A")
     git(site, "commit", "-q", "-m", "vendor")
-    assert main([*S, "sync"]) == 0  # idempotent
+    assert main([*S, "plugin", "sync"]) == 0  # idempotent
     assert "everything up to date" in capsys.readouterr().out
 
     # ---- status
@@ -262,12 +262,12 @@ def test_full_flow(tmp_path, upstream, server, monkeypatch, capsys):
     assert report["plugins"]["kqs"]["update"] is True
     assert report["plugins"]["multi"]["update"] is False
 
-    assert main([*S, "core", "--version", "latest"]) == 0
+    assert main([*S, "core", "latest"]) == 0
     assert 'version = "1.1.0"' in (site / "site.toml").read_text()
     assert "'1.1.0'" in (y / "includes/version.php").read_text()
     assert (y / "user/plugins/kqs/plugin.php").read_text() == "<?php // kqs v1\n"  # preserved
     assert (y / "user/plugins/multi/plugin.php").exists()
-    assert main([*S, "sync", "--update"]) == 0
+    assert main([*S, "plugin", "sync", "--update"]) == 0
     assert load_lock(site)["plugins"]["kqs"]["commit"] == kqs_c2
     assert main([*S, "status"]) == 0
     assert "drift: none" in capsys.readouterr().out
@@ -280,9 +280,9 @@ def test_full_flow(tmp_path, upstream, server, monkeypatch, capsys):
     start = toml.index('[[plugins]]\nname   = "multi"')
     end = toml.index('[[plugins]]\nname = "hyphens-in-urls"')
     (site / "site.toml").write_text(toml[:start] + toml[end:])
-    assert main([*S, "sync", "--dry-run"]) == 0
+    assert main([*S, "plugin", "sync", "--dry-run"]) == 0
     assert (y / "user/plugins/multi").exists()
-    assert main([*S, "sync"]) == 0
+    assert main([*S, "plugin", "sync"]) == 0
     assert not (y / "user/plugins/multi").exists()
     assert "multi" not in load_lock(site)["plugins"]
     assert main([*S, "build"]) == 0

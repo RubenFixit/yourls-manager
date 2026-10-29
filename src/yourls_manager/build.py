@@ -31,7 +31,7 @@ def build_site(cfg: SiteConfig, out: Path | None = None, *, allow_drift: bool = 
         if not allow_drift:
             raise YMError(
                 f"vendored tree does not match the lock:\n  {listing}\n"
-                "fix it (ym core / ym sync) or pass --allow-drift"
+                "fix it (ym core / ym plugin sync) or pass --allow-drift"
             )
         console.warn(f"building despite drift:\n  {listing}")
 

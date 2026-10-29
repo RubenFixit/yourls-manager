@@ -113,7 +113,7 @@ def check_site(rep: Report, start: Path | None) -> SiteConfig | None:
     from .lockfile import load_lock
 
     if not cfg.lock_file.is_file():
-        rep.add(FAIL, "lock", "yourls.lock.json is missing", "run `ym core` and `ym sync`")
+        rep.add(FAIL, "lock", "yourls.lock.json is missing", "run `ym core` and `ym plugin sync`")
     else:
         try:
             lock = load_lock(cfg.lock_file)
@@ -127,7 +127,7 @@ def check_site(rep: Report, start: Path | None) -> SiteConfig | None:
                         " no drift")  # fmt: skip
             else:
                 rep.add(FAIL, "lock", "drift: " + "; ".join(drift.problems),
-                        "run `ym status`, then `ym core` / `ym sync`")  # fmt: skip
+                        "run `ym status`, then `ym core` / `ym plugin sync`")  # fmt: skip
 
     code, _ = _git(cfg.root, "rev-parse", "--is-inside-work-tree")
     if code != 0:

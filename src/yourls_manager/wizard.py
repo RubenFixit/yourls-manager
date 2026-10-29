@@ -419,7 +419,7 @@ def run_wizard(
             res.remaining.append(f"after deploying: {item}")
     if adopting:
         res.remaining.append(
-            f"update YOURLS: {_cmd([*site, 'core', '--version', 'latest'])}, commit,"
+            f"update YOURLS: {_cmd([*site, 'update', '--commit'])},"
             f" {_cmd([*site, 'deploy', TARGET])}"
         )
     state.finish()

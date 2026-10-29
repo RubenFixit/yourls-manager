@@ -308,7 +308,7 @@ def parse_site(data: dict[str, Any], root: Path) -> SiteConfig:
     if version.lower() == "latest":
         raise ConfigError(
             "core.version",
-            "'latest' is not allowed here; run `ym core --version latest` to resolve a tag",
+            "'latest' is not allowed here; run `ym core latest` to resolve a tag",
         )
     if version.startswith("-") or any(c.isspace() for c in version):
         raise ConfigError("core.version", f"invalid tag {version!r}")

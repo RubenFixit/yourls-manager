@@ -11,7 +11,12 @@ from .util import console, run
 
 
 def update(
-    cfg: SiteConfig, *, commit: bool = False, core: bool = True, plugins: bool = True
+    cfg: SiteConfig,
+    *,
+    commit: bool = False,
+    core: bool = True,
+    plugins: bool = True,
+    force: bool = False,
 ) -> list[str]:
     """Update core to the latest stable tag and plugins to their newest commits.
 
@@ -26,12 +31,12 @@ def update(
         tag, _ = gitsrc.resolve_core_tag(cfg.core.repo, "latest")
         if old.core is None or old.core.version != tag:
             console.step(f"core -> {tag}")
-            update_core(cfg, "latest")
+            update_core(cfg, "latest", force=force)
         else:
             console.info(f"core: up to date ({tag})")
     if plugins and cfg.managed_plugins:
         console.step("plugins")
-        sync_plugins(cfg, None, update=True)
+        sync_plugins(cfg, None, update=True, force=force)
     changes = lock_diff(old, load_lock(cfg.lock_file))
     if not changes:
         console.info("everything is up to date")

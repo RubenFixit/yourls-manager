@@ -1,4 +1,4 @@
-"""`ym sync`: vendor third-party plugins into yourls/user/plugins/<name>."""
+"""`ym plugin sync` (formerly `ym sync`): vendor plugins into yourls/user/plugins/<name>."""
 
 from __future__ import annotations
 

@@ -137,7 +137,7 @@ def list_plugins(cfg: SiteConfig, *, check: bool = False, as_json: bool = False)
         console.info("  ".join(c.ljust(w) for c, w in zip(t, widths, strict=False)) + "  " + t[-1])
     updates = [r["name"] for r in rows if r["update_available"]]
     if check:
-        console.info(f"updates: {', '.join(updates)} (run `ym sync --update`)" if updates
+        console.info(f"updates: {', '.join(updates)} (run `ym plugin sync --update`)" if updates
                      else "all plugins up to date")  # fmt: skip
     return bool(updates)
 
@@ -355,7 +355,7 @@ def add_plugin(
         if key.lower().startswith("requires"):
             console.info(f"  {key}: {value}")
     if not sync:
-        console.info(f"  not vendored yet: run `ym sync --plugin {name}`")
+        console.info(f"  not vendored yet: run `ym plugin sync {name}`")
     return name
 
 

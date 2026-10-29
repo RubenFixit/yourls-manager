@@ -139,10 +139,10 @@ def new_site(
         console.step(f"ym core (YOURLS {cfg.core.version})")
         update_core(cfg)
         cfg = load_site(dest)
-        console.step("ym sync")
+        console.step("ym plugin sync")
         sync_plugins(cfg, check_dirty=False)  # brand-new repo: nothing to lose
     else:
-        console.info("skipped vendoring (--no-vendor); run `ym core` and `ym sync` later")
+        console.info("skipped vendoring (--no-vendor); run `ym core` and `ym plugin sync` later")
 
     uv_lock(dest)
     if git_init:

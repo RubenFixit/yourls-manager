@@ -107,7 +107,7 @@ def test_adopt_from_prod(tmp_path, capsys):
     assert "ruben@example.dreamhost.com:go.example.com" in ask.questions[2]
     remaining = "\n".join(res.remaining)
     assert "adopt-review" in remaining and "deploy prod --dry-run" in remaining
-    assert "core --version latest" in remaining
+    assert "update --commit" in remaining
 
 
 def test_adopt_local_dir_without_prod(tmp_path):
