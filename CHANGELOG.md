@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-29
+
+One consistent command set: noun + verb groups (`target`, `plugin`, `template`, `release`).
+Old spellings keep working in 0.7 with a warning.
+
 ### Added
 
 - `ym target login TARGET` and `ym target config TARGET`, the new names of `ym ssh-setup` and
@@ -16,7 +21,7 @@ All notable changes to this project are documented here. The format follows
   missing values on a terminal; `prod` defaults to `accept = "release"`; `protect` defaults
   to `.well-known/` as in the template).
 - `ym target list [--json]`: the targets with type, location, URL, policy and CI flag.
-- The setup wizard offers `ym target add prod` when the site has no `prod` target.
+- The `ym init` wizard offers `ym target add prod` when the site has no `prod` target.
 - `ym plugin sync [NAME ...]`, the new name of `ym sync` (plugin names are positional).
 - `ym core VERSION`: the version is positional (`ym core latest`).
 - `ym update --force`: passed to the core and plugin steps (uncommitted changes in `yourls/`).
@@ -249,7 +254,8 @@ Onboarding commands that work from the globally installed tool, before a site re
   JSON-on-stdout contract.
 - Redirect verification from `tests/redirects.toml` plus a JSON health check.
 
-[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/RubenFixit/yourls-manager/compare/v0.4.2...v0.4.3

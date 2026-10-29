@@ -25,7 +25,7 @@ if (PHP_SAPI !== 'cli') {
     exit(1);
 }
 
-const YM_HELPER_VERSION = '0.6.0';
+const YM_HELPER_VERSION = '0.7.0';
 const YM_PLUGIN_NAME_RE = '/^[A-Za-z0-9][A-Za-z0-9._-]*$/';
 
 $GLOBALS['ym_finished'] = false;
