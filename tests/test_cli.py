@@ -1,4 +1,4 @@
-"""CLI surface: deprecated command spellings (design §12)."""
+"""CLI surface: deprecated command spellings (design §14)."""
 
 from __future__ import annotations
 

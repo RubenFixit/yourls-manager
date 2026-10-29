@@ -31,7 +31,7 @@ def _global_options(parser: argparse.ArgumentParser, *, suppress: bool) -> None:
     )
 
 
-# Old command spellings kept for one release (design §12): hidden from `ym --help`, they warn
+# Old command spellings kept for one release (design §14): hidden from `ym --help`, they warn
 # and then run the new command. Remove them in 0.8.
 REMOVED_IN = "0.8"
 

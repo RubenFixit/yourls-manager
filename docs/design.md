@@ -116,8 +116,11 @@ Validation errors are friendly and point at the key. Unknown keys warn.
 
 ## 4. CLI (`yourls-manager`, alias `ym`)
 
+> Command names in §4–§13 are as they were introduced. v0.7 regrouped and renamed several;
+> §14 has the current names and the old → new map.
+
 Global: `--site-dir PATH` (default: cwd; searched upward for `site.toml`), `-v/--verbose`, `--version`.
-Exit codes: 0 ok, 1 error, 2 usage/config error, 10 updates available (`check` only).
+Exit codes: 0 ok, 1 error, 2 usage/config error, 10 updates available (`check` only; now `update --check`).
 
 | Command | Behavior |
 |---|---|
@@ -517,3 +520,78 @@ Other commands without a remote: `ym release --push` refuses before tagging ("ad
 Not done: removing old `ym-ci-` keys from the server, required reviewers or tag policies on
 the environments (configure in GitHub), `YM_<TARGET>_PASSWORD` as a secret for
 password-only SFTP hosts (the CI key replaces the password).
+
+---
+
+## 14. Command surface (v0.7)
+
+Goal: one consistent noun + verb command set. Renamed commands keep their old spelling for
+one release.
+
+### 14.1 Deprecated spellings
+
+`cli._deprecated(sub, common, OLD, NEW, add_args, **dest)` registers `ym OLD` as a subparser
+without `help=`, so argparse leaves it out of the command list in `ym --help` (3.11–3.15). Its
+`set_defaults(deprecated=(OLD, NEW), **dest)` sets the new command's namespace keys (they
+override the `command=OLD` the subparsers action writes first). `main()` prints
+`warning: \`ym OLD\` is deprecated and will be removed in 0.8; use \`ym NEW\`` on stderr and
+dispatches as the new command. Deprecated options (`ym core --version`, `ym release
+--promote/--list`) are `help=SUPPRESS` arguments that warn in the dispatcher. All of these
+are removed in 0.8.
+
+| Before 0.7 | 0.7 |
+|---|---|
+| `ym setup [DIR]` | `ym init [DIR]` |
+| `ym ssh-setup TARGET` | `ym target login TARGET` |
+| `ym server-config TARGET` | `ym target config TARGET` |
+| (hand-edit site.toml) | `ym target add NAME`, `ym target list` |
+| `ym plugins TARGET` | `ym plugin apply TARGET` |
+| `ym sync [--plugin NAME ...]` | `ym plugin sync [NAME ...]` |
+| `ym core --version V` | `ym core V` |
+| `ym check [--json]` | `ym update --check [--json]` |
+| `ym status` | `ym doctor --local` (+ `ym plugin list`; the alias runs both) |
+| `ym template-update` | `ym template update` |
+| `ym release --promote` / `--list` | `ym release promote` / `ym release list` |
+
+### 14.2 Groups
+
+| Group | Commands |
+|---|---|
+| onboarding | `init`, `new`, `adopt`, `template update` |
+| core and plugins | `update [--check]`, `core [VERSION]`, `plugin sync\|list\|search\|add\|remove\|enable\|disable`, `build` |
+| targets | `target add\|list\|login\|config` |
+| deploy and releases | `deploy`, `verify`, `plugin apply`, `release [--rc]`, `release promote\|list` |
+| health | `doctor [TARGET] [--local]` |
+| GitHub | `repo create`, `ci setup\|status` |
+
+### 14.3 New behavior
+
+- `target add NAME [--type rsync|sftp] [--host] [--user] [--port] [--path] [--php] [--url]
+  [--accept]`: appends `[deploy.targets.NAME]` (quoted key when NAME has a `.`) to site.toml
+  as text, like `plugin add`; re-parses and restores the file on any error. On a terminal it
+  asks for missing values (sftp skips the PHP question); otherwise `--path` is required, and
+  `--host` for sftp. Writes `type`, `path`, `accept` always and other keys only when not the
+  default. `prod` defaults to `accept = "release"` (as the template does), others to `"any"`.
+  `--php` on sftp warns and is dropped.
+- `target list [--json]`: name, type, location (`user@host:path`, `sftp://…`, `local:…`),
+  url, accept, ci.
+- `target login` for sftp targets: when key login fails but `YM_<TARGET>_PASSWORD` logs in,
+  report that and only offer a key (declining is success).
+- `update --check` = old `check` (read-only, exit 10 / 1 / 0); refuses the other update
+  options. `update --force` passes `--force` to the core and plugin steps.
+- `doctor --local`: tools + site repo only (no network); prints the site name, the locked
+  core commit, and one line per drift problem. Rejects `TARGET --local`.
+- `init`: progress files are `.git/ym-init.json` and `$XDG_STATE_HOME/yourls-manager/
+  init.json`; the pre-0.7 `ym-setup.json` / `setup.json` are read and replaced on save. The
+  wizard offers `target add prod` when site.toml has no prod target.
+- `release` keeps tagging without an action; `promote` and `list` are optional subcommands.
+  `--push`, `--dry-run`, `-m` exist on both levels, with SUPPRESSed defaults in the
+  subparser so `ym release --push promote` keeps `--push`.
+- `deploy --help` groups options: all targets / rsync (`--skip-backup`) / sftp
+  (`--verify-remote`).
+
+### 14.4 Template
+
+The site template pins `manager_version`, so it moves to the new names only after v0.7.0 is
+tagged: `check-updates.yml` uses `ym update --check` and `ym update --force`; docs and
+comments use the new names; "uncomment the prod target" becomes `ym target add prod`.
