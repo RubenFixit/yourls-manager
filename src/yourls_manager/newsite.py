@@ -152,6 +152,12 @@ def new_site(
     console.info(f"Site repo ready: {dest}")
     console.info("Next steps:")
     console.info(f"  cd {dest}")
+    if cfg.artifact.enabled and not cfg.targets:
+        # artifact-only site (design §15): something else deploys the published archives
+        console.info("  ym release --push              # tag a release; CI publishes its artifacts")
+        console.info("  ym artifact build              # or build them here (dist-artifacts/)")
+        console.info("Deployed by ym as well? `ym target add prod`")
+        return dest
     if not prod:
         console.info("  ym target add prod             # where and how the site deploys")
     console.info("  ym target config prod          # create the server-local config (secrets)")

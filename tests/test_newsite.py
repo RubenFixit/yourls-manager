@@ -149,6 +149,39 @@ def test_new_and_template_update(tmp_path, fake_github, no_uv_lock, capfd):
 
 
 @needs_copier
+def test_artifact_only_gitlab_site(tmp_path, fake_github, no_uv_lock, capfd):
+    """Template ci_provider=gitlab + release_artifact (design §15.4-15.5) end to end."""
+    dest = tmp_path / "app"
+    argv = new_site_args(dest, "yourls_version=1.0.0", "ci_provider=gitlab",
+                         "release_artifact=true")  # fmt: skip
+    assert main(argv) == 0
+    out = capfd.readouterr().out
+    assert "ym artifact build" in out and "ym target config" not in out
+    assert (dest / ".gitlab-ci.yml").is_file() and not (dest / ".github").exists()
+    assert "ym artifact build" in (dest / ".gitlab-ci.yml").read_text()
+    cfg = tomllib.loads((dest / "site.toml").read_text())
+    assert cfg["artifact"]["enabled"] is True and "deploy" not in cfg
+
+    S = ["--site-dir", str(dest)]
+    assert main([*S, "release"]) == 0
+    assert main([*S, "artifact", "build"]) == 0
+    assert (dest / "dist-artifacts" / "go-example-com-1.0.0-1.tar.gz").is_file()
+    assert git(dest, "status", "--porcelain") == ""  # dist-artifacts/ is gitignored
+    capfd.readouterr()
+    assert main([*S, "doctor"]) == 0
+    out = capfd.readouterr().out
+    assert "artifact: tar.gz, published by .gitlab-ci.yml" in out
+    assert "targets: none (artifact-only site)" in out
+
+    # switch the CI files with `ym template update --data`
+    rc = main([*S, "template", "update", "--vcs-ref", "HEAD", "--defaults",
+               "--data", "ci_provider=github"])  # fmt: skip
+    assert rc == 0
+    assert not (dest / ".gitlab-ci.yml").exists()
+    assert (dest / ".github/workflows/publish.yml").is_file()
+
+
+@needs_copier
 def test_new_no_vendor_no_git(tmp_path, no_uv_lock, capfd):
     dest = tmp_path / "s"
     assert main([*new_site_args(dest), "--no-vendor", "--no-git"]) == 0
