@@ -26,6 +26,8 @@ def _help(capsys) -> str:
             ["sync", "--plugin", "a", "--plugin", "b", "--update"],
             {"command": "plugin", "plugin_cmd": "sync", "names": ["a", "b"], "update": True},
         ),
+        (["status"], {"command": "doctor", "local": True, "target": None, "with_plugins": True}),
+        (["check", "--json"], {"command": "update", "check": True, "json": True}),
     ],
 )
 def test_deprecated_alias_parses_as_new_command(old, new):
@@ -37,7 +39,7 @@ def test_deprecated_alias_parses_as_new_command(old, new):
 
 def test_deprecated_aliases_hidden_from_help(capsys):
     out = _help(capsys)
-    for old in ("plugins", "ssh-setup", "server-config", "sync"):
+    for old in ("plugins", "ssh-setup", "server-config", "sync", "status", "check"):
         assert f"\n    {old} " not in out
 
 
@@ -55,3 +57,13 @@ def test_core_version_positional_and_deprecated_flag():
     assert (args.core_version, args.core_version_flag) == (None, "1.10.6")
     assert parse(["plugin", "sync", "a", "--dry-run"]).names == ["a"]
     assert parse(["update", "--force"]).force is True
+
+
+def test_update_check_rejects_update_options(tmp_path, capsys):
+    (tmp_path / "site.toml").write_text(
+        '[site]\nname = "T"\nslug = "t"\nurl = "https://x.example"\n[core]\nversion = "1.0.0"\n'
+    )
+    S = ["--site-dir", str(tmp_path)]
+    assert main([*S, "update", "--check", "--commit"]) == 2
+    assert main([*S, "update", "--json"]) == 2
+    assert main([*S, "doctor", "prod", "--local"]) == 2

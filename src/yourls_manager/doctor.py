@@ -1,4 +1,4 @@
-"""`ym doctor [TARGET]`: read-only health report of the tools, site repo and targets (§11.3)."""
+"""`ym doctor [TARGET] [--local]`: read-only health report of tools, site repo, targets."""
 
 from __future__ import annotations
 
@@ -104,6 +104,7 @@ def check_site(rep: Report, start: Path | None) -> SiteConfig | None:
     except YMError as exc:
         rep.add(FAIL, "site.toml", str(exc), "fix site.toml")
         return None
+    console.info(f"  site: {cfg.site.name} ({cfg.site.slug})  {cfg.site.url}")
     if cfg.warnings:
         rep.add(WARN, "site.toml", "; ".join(cfg.warnings))
     else:
@@ -121,13 +122,18 @@ def check_site(rep: Report, start: Path | None) -> SiteConfig | None:
             rep.add(FAIL, "lock", str(exc))
         else:
             drift = compute_drift(cfg, lock)
+            core = (
+                f"YOURLS {lock.core.version} @ {lock.core.commit[:10]}" if lock.core else "no core"
+            )
             if drift.clean:
-                core = lock.core.version if lock.core else "?"
-                rep.add(OK, "lock", f"YOURLS {core}, {len(lock.plugins)} vendored plugin(s),"
-                        " no drift")  # fmt: skip
+                rep.add(OK, "lock", f"{core}, {len(lock.plugins)} vendored plugin(s), no drift")
             else:
-                rep.add(FAIL, "lock", "drift: " + "; ".join(drift.problems),
-                        "run `ym status`, then `ym core` / `ym plugin sync`")  # fmt: skip
+                rep.add(FAIL, "lock", f"{core}; yourls/ drifted from the lock:")
+                for problem in drift.problems:
+                    console.info(f"          - {problem}")
+                console.info(
+                    "        -> run the commands named above (`ym core` / `ym plugin sync`)"
+                )
 
     code, _ = _git(cfg.root, "rev-parse", "--is-inside-work-tree")
     if code != 0:
@@ -323,12 +329,14 @@ def check_target(rep: Report, cfg: SiteConfig, spec: TargetSpec, github: dict | 
         _ci_checks(rep, cfg, spec, github if github is not None else {})
 
 
-def doctor(start: Path | None, target: str | None = None) -> bool:
-    """Print the report; returns True when nothing failed."""
+def doctor(start: Path | None, target: str | None = None, *, local: bool = False) -> bool:
+    """Print the report; returns True when nothing failed.
+
+    ``local``: only the tools and the site repo (no network; formerly ``ym status``)."""
     rep = Report()
     cfg = check_site(rep, start)
     check_tools(rep, cfg)
-    if cfg is not None:
+    if cfg is not None and not local:
         if target is not None:
             specs = [cfg.target(target)]
         else:

@@ -106,7 +106,7 @@ The first deploy should change nothing that matters. Only the template's own fil
 anything listed under `adopt-review/` before you deploy. Then update:
 
 ```sh
-ym check                            # what has updates (exit code 10 = updates available)
+ym update --check                   # what has updates (exit code 10 = updates available)
 ym core latest            # move YOURLS core to the newest release
 ym plugin sync --update                    # move plugins to their newest commits
 git diff --stat                     # review
@@ -179,7 +179,7 @@ Or by hand: set `ci = true` on the target, and under Settings → Environments �
 | `DEPLOY_SSH_KEY` | private key (ed25519) whose public half is in `~/.ssh/authorized_keys` on the host |
 | `DEPLOY_KNOWN_HOSTS` | output of `ssh-keyscan -p <port> <host>` (check the fingerprint) |
 
-`.github/workflows/check-updates.yml` runs `ym check` every week and opens a pull request
+`.github/workflows/check-updates.yml` runs `ym update --check` every week and opens a pull request
 when there are updates. For that, enable *Allow GitHub Actions to create and approve pull
 requests* under Settings → Actions → General.
 
@@ -187,7 +187,7 @@ requests* under Settings → Actions → General.
 
 **Routine updates** (the weekly `check-updates` pull request does steps 1 and 2 for you):
 
-1. `ym check`: see what's new upstream.
+1. `ym update --check`: see what's new upstream.
 2. `ym core latest` and/or `ym plugin sync --update`: vendor the new versions.
 3. Review `git diff` (especially `yourls/` and `yourls.lock.json`) and commit.
 4. `ym deploy prod --dry-run`, then `ym deploy prod`. Or push a `v*` tag and let CI deploy.
@@ -289,7 +289,7 @@ Global options: `--site-dir PATH` (default: search upward from the current direc
 `site.toml`), `-v/--verbose`, `--version`.
 
 Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates available
-(`check` only).
+(`update --check` and `plugin list --check`).
 
 ### Onboarding
 
@@ -308,8 +308,8 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 
 | Command | What it does |
 |---|---|
-| `ym status` | Show the locked core version, each plugin (locked commit, active flag), and any drift: tree-hash mismatches, plugins in `site.toml` but not in the lock (or the reverse), and uncommitted Git changes under `yourls/`. |
-| `ym check [--json]` | Ask upstream (with `git ls-remote`) for the newest stable core tag (`-rc`/`-beta` tags are skipped) and each plugin ref's current commit. Exits **10** if anything can be updated. |
+| `ym doctor --local` | The offline part of `ym doctor`: tools, `site.toml`, the locked core version and commit, drift (tree-hash mismatches, plugins in `site.toml` but not in the lock or the reverse), and uncommitted changes. Exits 1 on drift. Plugin details: `ym plugin list`. |
+| `ym update --check [--json]` | Read-only. Ask upstream (with `git ls-remote`) for the newest stable core tag (`-rc`/`-beta` tags are skipped) and each plugin ref's current commit. Exits **10** if anything can be updated. |
 | `ym core [VERSION\|latest] [--dry-run] [--force]` | Fetch core at a tag (default: `[core].version`) and replace `yourls/`, keeping managed plugin dirs and applying `exclude`. Updates the lock and `[core].version`. |
 | `ym plugin sync [NAME ...] [--update] [--dry-run] [--force]` | Vendor plugins into `yourls/user/plugins/<name>`. By default it uses the locked commit while the plugin's repo/ref/path are unchanged. `--update` re-resolves refs. A managed plugin that was removed from `site.toml` has its directory deleted. |
 | `ym build [--out DIR] [--allow-drift]` | Clean `dist/`, then copy `yourls/` and `overlay/` into it. Refuses to build if `yourls/` doesn't match the lock. `-v` lists each overlay override. |
@@ -317,7 +317,7 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 | `ym verify TARGET` / `ym verify --url URL` | Check `GET /health.php` (expects `{"ok": true}`), then each case in `tests/redirects.toml`. Redirects are not followed. |
 | `ym plugin apply TARGET` | Make the active plugin set on the target exactly the set marked `active` in `site.toml`. Not available for `sftp` targets (it prints what to activate in the admin UI). |
 | `ym release [--rc \| --promote \| --list] [--push] [--dry-run] [-m TEXT]` | Tag the next release `v<yourls>-<rev>` (`--rc`: `-rc.<n>`; `--promote`: the newest rc's final) on a clean, drift-free tree, with release notes from the lock diff. `--list` shows releases and which targets have them deployed. |
-| `ym doctor [TARGET]` | Read-only health report, one line per check (ok / warn / FAIL) with a fix hint: git, uv, rsync and ssh (when a target needs them); `site.toml` valid; lock present without drift; uncommitted changes; HEAD pushed. Per target (all, or the one given): login, PHP CLI version (rsync), server config present, `url` is https, install/upgrade pending, and the deployed commit vs HEAD (from release.json). Exits 1 if any check fails. |
+| `ym doctor [TARGET] [--local]` | Read-only health report, one line per check (ok / warn / FAIL) with a fix hint: git, uv, rsync and ssh (when a target needs them); `site.toml` valid; lock present without drift; uncommitted changes; HEAD pushed. Per target (all, or the one given): login, PHP CLI version (rsync), server config present, `url` is https, install/upgrade pending, and the deployed commit vs HEAD (from release.json). Exits 1 if any check fails. |
 | `ym repo create [--name NAME] [--owner OWNER] [--public] [--dry-run]` | Create the site's GitHub repository with the GitHub CLI (private by default), add it as `origin` and push the current branch (no tags). Deploying is unaffected. See [Store the site on GitHub](#store-the-site-on-github). |
 | `ym ci setup [TARGET ...] [--repo OWNER/NAME] [--rotate] [--dry-run]` | Enable deploys from GitHub Actions: per target, create its environment (`prod` → `production`, others → `staging`), install a new CI key on the server and store it as `DEPLOY_SSH_KEY`, store the host keys from `~/.ssh/known_hosts` as `DEPLOY_KNOWN_HOSTS`, and set `ci = true` in site.toml. Offers `gh auth login`, and `ym repo create` if needed. Default targets: `prod`, `staging` and any with `ci = true`. See [Deploy from GitHub Actions](#deploy-from-github-actions-optional). |
 | `ym ci status [TARGET ...]` | Check that each `ci = true` target's environment exists and has both secrets. Exits 1 if not. |
@@ -543,7 +543,7 @@ unless you list them by exact name.
 
 | Where | Owner | Changed by |
 |---|---|---|
-| `yourls/`, `yourls.lock.json` | `ym` | `ym core`, `ym plugin sync`, `ym adopt` only. Never edit by hand; `ym status` shows drift. |
+| `yourls/`, `yourls.lock.json` | `ym` | `ym core`, `ym plugin sync`, `ym adopt` only. Never edit by hand; `ym doctor --local` shows drift. |
 | `overlay/` | you (some files come from the template) | You, `ym adopt`, and `ym template-update` for the template's files. To patch a vendored plugin, put the changed files in `overlay/user/plugins/<name>/`. |
 | `site.toml`, `tests/redirects.toml` | you | You (`ym core` and `ym adopt` update `[core].version` and append plugins, keeping your comments). |
 | Server-local config | the server | `ym target config`. It's never in Git. |

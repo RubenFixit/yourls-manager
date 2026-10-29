@@ -160,7 +160,7 @@ def _require_clean(cfg: SiteConfig) -> None:
     if is_dirty(cfg.root):
         raise UsageError("uncommitted changes: commit them first (`git status`)")
     if not compute_drift(cfg, load_lock(cfg.lock_file)).clean:
-        raise UsageError("yourls/ differs from yourls.lock.json (see `ym status`)")
+        raise UsageError("yourls/ differs from yourls.lock.json (see `ym doctor --local`)")
 
 
 def has_remote(root: Path, name: str | None = None) -> bool:

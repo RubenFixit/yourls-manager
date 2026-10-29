@@ -19,6 +19,10 @@ All notable changes to this project are documented here. The format follows
 - `ym plugin sync [NAME ...]`, the new name of `ym sync` (plugin names are positional).
 - `ym core VERSION`: the version is positional (`ym core latest`).
 - `ym update --force`: passed to the core and plugin steps (uncommitted changes in `yourls/`).
+- `ym update --check [--json]`, the new name of `ym check` (read-only, exit 10 on updates).
+- `ym doctor --local`: only the tools and the site repo, no target checks (offline). The
+  report now names the site and shows the locked core commit; drift problems are listed
+  one per line.
 
 ### Changed
 
@@ -35,6 +39,9 @@ are hidden from `ym --help` and will be removed in 0.8.
 - `ym server-config TARGET`: use `ym target config TARGET`.
 - `ym sync [--plugin NAME ...]`: use `ym plugin sync [NAME ...]`.
 - `ym core --version V`: use `ym core V` (the option clashed with the global `ym --version`).
+- `ym check`: use `ym update --check`.
+- `ym status`: use `ym doctor --local` (and `ym plugin list` for plugin details). The alias
+  runs both, and now exits 1 on drift.
 
 ## [0.6.0] - 2026-10-29
 

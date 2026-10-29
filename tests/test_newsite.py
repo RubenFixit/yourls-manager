@@ -126,9 +126,9 @@ def test_new_and_template_update(tmp_path, fake_github, no_uv_lock, capfd):
     # second `ym new` into the same dir is refused
     assert main(new_site_args(dest)) == 2
 
-    # status works in the new repo
-    assert main(["--site-dir", str(dest), "status"]) == 0
-    assert "drift: none" in capfd.readouterr().out
+    # the new repo is healthy (no drift)
+    assert main(["--site-dir", str(dest), "doctor", "--local"]) == 0
+    assert "no drift" in capfd.readouterr().out
 
     # template-update: dirty tree refused, then pins a new manager version
     (dest / "site.toml").write_text((dest / "site.toml").read_text() + "\n# local edit\n")

@@ -179,8 +179,8 @@ def test_full_flow(tmp_path, upstream, server, monkeypatch, capsys):
     assert "everything up to date" in capsys.readouterr().out
 
     # ---- status
-    assert main([*S, "status"]) == 0
-    assert "drift: none" in capsys.readouterr().out
+    assert main([*S, "doctor", "--local"]) == 0
+    assert "no drift" in capsys.readouterr().out
 
     # ---- build + drift detection
     assert main([*S, "build", "-v"]) == 0
@@ -256,7 +256,7 @@ def test_full_flow(tmp_path, upstream, server, monkeypatch, capsys):
     core.commit(core_files("1.2.0-rc1"), tag="1.2.0-rc1")
     kqs_c2 = kqs.commit({"plugin.php": "<?php // kqs v2\n"})
     capsys.readouterr()
-    assert main([*S, "check", "--json"]) == 10
+    assert main([*S, "update", "--check", "--json"]) == 10
     report = json.loads(capsys.readouterr().out)
     assert report["core"] == {"current": "1.0.0", "latest": "1.1.0", "update": True}
     assert report["plugins"]["kqs"]["update"] is True
@@ -269,11 +269,11 @@ def test_full_flow(tmp_path, upstream, server, monkeypatch, capsys):
     assert (y / "user/plugins/multi/plugin.php").exists()
     assert main([*S, "plugin", "sync", "--update"]) == 0
     assert load_lock(site)["plugins"]["kqs"]["commit"] == kqs_c2
-    assert main([*S, "status"]) == 0
-    assert "drift: none" in capsys.readouterr().out
+    assert main([*S, "doctor", "--local"]) == 0
+    assert "no drift" in capsys.readouterr().out
     git(site, "add", "-A")
     git(site, "commit", "-q", "-m", "update")
-    assert main([*S, "check"]) == 0
+    assert main([*S, "update", "--check"]) == 0
 
     # ---- removing a plugin from site.toml removes its managed dir
     toml = (site / "site.toml").read_text()
@@ -361,4 +361,4 @@ def test_version(argv, capsys):
 
 def test_no_site_toml_is_usage_error(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    assert main(["status"]) == 2
+    assert main(["build"]) == 2

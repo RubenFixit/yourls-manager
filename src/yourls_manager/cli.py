@@ -6,6 +6,7 @@ import argparse
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 from . import __version__
 from .config import REDIRECTS_FILE, SiteConfig, find_site_dir, load_site
@@ -41,7 +42,7 @@ def _deprecated(
     old: str,
     new: str,
     add_args: Callable[[argparse.ArgumentParser], None] | None = None,
-    **dest: str,
+    **dest: Any,
 ) -> argparse.ArgumentParser:
     """Register ``ym OLD`` as a deprecated spelling of ``ym NEW``.
 
@@ -85,10 +86,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
 
-    sub.add_parser("status", parents=[common], help="show locked versions and drift")
-
-    p = sub.add_parser("check", parents=[common], help="check upstreams for updates (exit 10)")
-    p.add_argument("--json", action="store_true", help="machine-readable output")
+    _deprecated(sub, common, "status", "doctor --local", command="doctor", target=None,
+                local=True, with_plugins=True)  # fmt: skip
+    _deprecated(sub, common, "check", "update --check",
+                lambda p: p.add_argument("--json", action="store_true"),
+                command="update", check=True, commit=False, core_only=False,
+                plugins_only=False, force=False)  # fmt: skip
 
     p = sub.add_parser("core", parents=[common], help="vendor YOURLS core at a tag")
     p.add_argument(
@@ -222,6 +225,12 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--core-only", action="store_true", help="only update YOURLS core")
     g.add_argument("--plugins-only", action="store_true", help="only update plugins")
     p.add_argument("--force", action="store_true", help="ignore uncommitted changes in yourls/")
+    p.add_argument(
+        "--check",
+        action="store_true",
+        help="only report what can be updated (read-only; exit 10 if anything can)",
+    )
+    p.add_argument("--json", action="store_true", help="with --check: machine-readable output")
 
     p = sub.add_parser(
         "release",
@@ -254,9 +263,11 @@ def build_parser() -> argparse.ArgumentParser:
             "Check local tools, site.toml, the lock and drift, uncommitted and unpushed"
             " changes, and per target: login, PHP CLI (rsync), server config, https url,"
             " install/upgrade state, and the deployed commit vs HEAD. Changes nothing."
+            " --local skips the targets (offline)."
         ),
     )
     p.add_argument("target", nargs="?", help="check only this target (default: all)")
+    p.add_argument("--local", action="store_true", help="only tools and the site repo (no network)")
 
     p = sub.add_parser(
         "repo",
@@ -585,8 +596,16 @@ def _dispatch(args: argparse.Namespace) -> int:
     if cmd == "doctor":
         from .doctor import doctor
 
+        if args.local and args.target:
+            raise UsageError("give either TARGET or --local, not both")
         start = args.site_dir.resolve() if args.site_dir else None
-        return EXIT_OK if doctor(start, args.target) else EXIT_ERROR
+        ok = doctor(start, args.target, local=args.local)
+        if getattr(args, "with_plugins", False) and ok:  # deprecated `ym status`
+            from .plugincmd import list_plugins
+
+            console.info("")
+            list_plugins(_load(args))
+        return EXIT_OK if ok else EXIT_ERROR
 
     if cmd == "plugin" and args.plugin_cmd == "search":
         from .catalog import plugin_search
@@ -600,23 +619,6 @@ def _dispatch(args: argparse.Namespace) -> int:
         return EXIT_OK
 
     cfg = _load(args)
-
-    if cmd == "status":
-        from .report import status
-
-        status(cfg)
-        return EXIT_OK
-
-    if cmd == "check":
-        from .report import check_updates, print_check
-
-        report = check_updates(cfg)
-        print_check(report, args.json)
-        if report["updates_available"]:
-            return EXIT_UPDATES
-        if any(p.get("error") for p in report["plugins"].values()):
-            return EXIT_ERROR
-        return EXIT_OK
 
     if cmd == "core":
         from .core import update_core
@@ -725,9 +727,24 @@ def _dispatch(args: argparse.Namespace) -> int:
                  confirm=_confirm if is_tty() else None)  # fmt: skip
         return EXIT_OK
 
+    if cmd == "update" and args.check:
+        from .report import check_updates, print_check
+
+        if args.commit or args.force or args.core_only or args.plugins_only:
+            raise UsageError("--check only reports; it takes no other options except --json")
+        report = check_updates(cfg)
+        print_check(report, args.json)
+        if report["updates_available"]:
+            return EXIT_UPDATES
+        if any(p.get("error") for p in report["plugins"].values()):
+            return EXIT_ERROR
+        return EXIT_OK
+
     if cmd == "update":
         from .update import update
 
+        if args.json:
+            raise UsageError("--json goes with --check")
         update(cfg, commit=args.commit, core=not args.plugins_only, plugins=not args.core_only,
                force=args.force)  # fmt: skip
         return EXIT_OK

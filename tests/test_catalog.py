@@ -209,7 +209,7 @@ def test_doctor(site, tmp_path, monkeypatch, capsys):
     S = ["--site-dir", str(site)]
     assert main([*S, "doctor"]) == 1
     out = capsys.readouterr().out
-    assert "ok    lock: YOURLS 1.0.0, 0 vendored plugin(s), no drift" in out
+    assert "ok    lock: YOURLS 1.0.0 @ " in out and "0 vendored plugin(s), no drift" in out
     assert "ok    working tree: clean" in out
     assert "ok    remote: none (local only)" in out
     assert "ok    login: local target (no host)" in out

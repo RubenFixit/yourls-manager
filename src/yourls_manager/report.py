@@ -1,4 +1,4 @@
-"""`ym status` and `ym check`."""
+"""`ym update --check` (formerly `ym check`): ask upstreams for updates."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from typing import Any
 
 from . import gitsrc
 from .config import SiteConfig
-from .drift import compute_drift, git_changes
 from .lockfile import load_lock
 from .util import YMError, console
 
@@ -18,48 +17,6 @@ def _table(rows: list[list[str]], header: list[str]) -> str:
     lines = [fmt.format(*header), fmt.format(*("-" * w for w in widths))]
     lines += [fmt.format(*map(str, r)) for r in rows]
     return "\n".join(line.rstrip() for line in lines)
-
-
-def status(cfg: SiteConfig) -> bool:
-    """Print status; returns True when there is no drift."""
-    lock = load_lock(cfg.lock_file)
-    console.info(f"site: {cfg.site.name} ({cfg.site.slug})  {cfg.site.url}")
-    if lock.core:
-        console.info(
-            f"core: YOURLS {lock.core.version} @ {lock.core.commit[:10]}"
-            f"  (site.toml: {cfg.core.version})"
-        )
-    else:
-        console.info(f"core: not locked (site.toml: {cfg.core.version})")
-    rows = []
-    for p in cfg.plugins:
-        entry = lock.plugins.get(p.name)
-        if p.managed:
-            source = f"{p.repo}" + (f" [{p.path}]" if p.path != "." else "")
-            commit = entry.commit[:10] if entry else "(unlocked)"
-            ref = p.ref
-        else:
-            source, commit, ref = "core/overlay", "-", "-"
-        rows.append([p.name, "yes" if p.active else "no", ref, commit, source])
-    if rows:
-        console.info("")
-        console.info(_table(rows, ["plugin", "active", "ref", "commit", "source"]))
-    drift = compute_drift(cfg, lock)
-    console.info("")
-    if drift.clean:
-        console.info("drift: none (yourls/ matches yourls.lock.json)")
-    else:
-        console.info("drift:")
-        for prob in drift.problems:
-            console.info(f"  - {prob}")
-    changes = git_changes(cfg.root, cfg.vendor_dir.name) if cfg.vendor_dir.exists() else []
-    if changes:
-        console.info("uncommitted changes in yourls/ (git status):")
-        for line in changes[:50]:
-            console.info(f"  {line}")
-        if len(changes) > 50:
-            console.info(f"  ... and {len(changes) - 50} more")
-    return drift.clean
 
 
 def check_updates(cfg: SiteConfig) -> dict[str, Any]:
