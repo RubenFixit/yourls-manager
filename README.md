@@ -62,12 +62,12 @@ On the first deploy to an empty database, `ym` uploads the files and then asks y
 `https://<your site>/admin/install.php` once to create the tables. After that:
 
 ```sh
-ym plugins prod                     # activate the plugins marked active in site.toml
+ym plugin apply prod                # activate the plugins marked active in site.toml
 ```
 
 Only SFTP on your host? Answer `sftp` to the deploy type question. `ym ssh-setup`,
 `ym server-config` and `ym deploy` then work over SFTP; activate the plugins in
-`https://<your site>/admin/plugins.php` instead of `ym plugins` (every deploy lists them). See
+`https://<your site>/admin/plugins.php` instead of `ym plugin apply` (every deploy lists them). See
 [SFTP targets](#sftp-targets).
 
 If you leave the deploy host empty when `ym new` asks, the `prod` target is written to
@@ -287,11 +287,11 @@ Exit codes: `0` ok, `1` error, `2` usage or configuration error, `10` updates av
 | `ym build [--out DIR] [--allow-drift]` | Clean `dist/`, then copy `yourls/` and `overlay/` into it. Refuses to build if `yourls/` doesn't match the lock. `-v` lists each overlay override. |
 | `ym deploy TARGET [--dry-run] [--no-build] [--skip-backup] [--skip-verify] [--verify-remote] [--allow-dirty] [--force]` | `rsync` targets: build → preflight → upload helper → DB backup → rsync → DB upgrade → plugins → record → verify. `--dry-run` shows rsync's itemized changes and stops. `sftp` targets: see [SFTP targets](#sftp-targets); `--verify-remote` (sftp only) also checks every deployed file on the server. Refuses uncommitted changes unless `--allow-dirty`; targets with `accept = "release"` only take a final release tag (`--force` overrides, recorded). Afterwards moves the `deployed/<target>` branch. See [Releases and deploy policy](#releases-and-deploy-policy). |
 | `ym verify TARGET` / `ym verify --url URL` | Check `GET /health.php` (expects `{"ok": true}`), then each case in `tests/redirects.toml`. Redirects are not followed. |
-| `ym plugins TARGET` | Make the active plugin set on the target exactly the set marked `active` in `site.toml`. Not available for `sftp` targets (it prints what to activate in the admin UI). |
+| `ym plugin apply TARGET` (alias `ym plugins TARGET`) | Make the active plugin set on the target exactly the set marked `active` in `site.toml`. Not available for `sftp` targets (it prints what to activate in the admin UI). |
 | `ym release [--rc \| --promote \| --list] [--push] [--dry-run] [-m TEXT]` | Tag the next release `v<yourls>-<rev>` (`--rc`: `-rc.<n>`; `--promote`: the newest rc's final) on a clean, drift-free tree, with release notes from the lock diff. `--list` shows releases and which targets have them deployed. |
 | `ym doctor [TARGET]` | Read-only health report, one line per check (ok / warn / FAIL) with a fix hint: git, uv, rsync and ssh (when a target needs them); `site.toml` valid; lock present without drift; uncommitted changes; HEAD pushed. Per target (all, or the one given): login, PHP CLI version (rsync), server config present, `url` is https, install/upgrade pending, and the deployed commit vs HEAD (from release.json). Exits 1 if any check fails. |
 | `ym update [--commit] [--core-only \| --plugins-only]` | Routine update in one step: core to the latest stable release, plugins to their newest commits, build, then a summary of the changes (`--commit` commits them with that summary as the message). |
-| `ym plugin list` / `ym plugin enable NAME` / `ym plugin disable NAME` | List plugins with source, ref and locked commit; switch a plugin's `active` flag in `site.toml` (comments kept). The next deploy applies it. |
+| `ym plugin list [--json] [--check]` / `ym plugin enable NAME` / `ym plugin disable NAME` | List plugins with header version, source, ref and locked commit (`--check` asks upstream for newer commits and exits **10** if any; `--json` for scripts); switch a plugin's `active` flag in `site.toml` (comments kept). The next deploy applies it. |
 | `ym plugin search [QUERY] [--category SLUG] [--refresh] [--json]` | Search the [awesome-yourls](https://github.com/YOURLS/awesome) plugin catalog by name, tags and description (name matches rank first). Shows category, badges (official / tested), link and description, and marks plugins already in `site.toml`. `--category` alone lists a category. The catalog is cached for a day in `~/.cache/yourls-manager/` (`--refresh` downloads it again). Works outside a site repo too. |
 | `ym plugin add NAME\|URL [--name DIR] [--ref REF] [--path SUBDIR] [--inactive] [--no-sync] [--refresh]` | Add a plugin by catalog name (exact, case-insensitive or unique prefix; quote names with spaces) or by a clone URL or GitHub/GitLab/Codeberg/Bitbucket project page (`/tree/<ref>/<dir>` sets ref and path). Finds `plugin.php` at the top of the repo or one directory down (several: asks on a terminal, else needs `--path`), shows its header (name, version, description, requirements), appends a `[[plugins]]` block to `site.toml` and vendors it (`--no-sync`: edit `site.toml` only). Refuses duplicates and directory names already used by core or `overlay/`. Catalog entries that link to a web page instead of a repo need the repo URL. |
 | `ym plugin remove NAME [--keep-files]` | Delete the plugin's `[[plugins]]` block from `site.toml` and its vendored copy (refused if that copy has uncommitted changes). The next deploy deactivates it and removes its files; plugin data (options, tables) stays in the database. |

@@ -5,6 +5,7 @@ site.toml edits are textual.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -62,22 +63,83 @@ def set_active(cfg: SiteConfig, name: str, active: bool) -> bool:
     return True
 
 
-def list_plugins(cfg: SiteConfig) -> None:
+def plugin_rows(cfg: SiteConfig, *, check: bool = False) -> list[dict]:
+    """One dict per site.toml plugin: source, ref, locked commit, header version, updates."""
+    from . import gitsrc
+    from .drift import plugin_dir
+
     lock = load_lock(cfg.lock_file)
-    rows = [("name", "active", "source", "ref", "commit")]
+    rows = []
     for p in cfg.plugins:
         locked = lock.plugins.get(p.name)
+        overlay = cfg.overlay_dir / "user/plugins" / p.name
         if p.repo:
-            source = p.repo + ("" if p.path in ("", ".") else f" ({p.path})")
-        elif (cfg.overlay_dir / "user/plugins" / p.name).is_dir():
+            source = "repo"
+        elif overlay.is_dir():
             source = "overlay"
         else:
             source = "core"
-        rows.append((p.name, "yes" if p.active else "no", source, p.ref if p.repo else "-",
-                     locked.commit[:10] if locked else "-"))  # fmt: skip
-    widths = [max(len(r[i]) for r in rows) for i in range(4)]
+        version = None
+        for d in (overlay, plugin_dir(cfg, p.name)):  # overlay wins at build time
+            if (d / "plugin.php").is_file():
+                version = read_header(d / "plugin.php").get("Version")
+                break
+        row = {
+            "name": p.name,
+            "active": p.active,
+            "source": source,
+            "repo": p.repo,
+            "ref": p.ref if p.repo else None,
+            "path": p.path if p.repo else None,
+            "commit": locked.commit if locked else None,
+            "version": version,
+            "latest_commit": None,
+            "update_available": None,
+            "error": None,
+        }
+        if check and p.repo:
+            try:
+                latest = gitsrc.resolve_ref(p.repo, p.ref)
+            except YMError as exc:
+                row["error"] = str(exc).splitlines()[0]
+            else:
+                row["latest_commit"] = latest
+                row["update_available"] = latest != row["commit"]
+        rows.append(row)
+    return rows
+
+
+def list_plugins(cfg: SiteConfig, *, check: bool = False, as_json: bool = False) -> bool:
+    """Print the plugin table. Returns True when --check found an update."""
+    rows = plugin_rows(cfg, check=check)
+    if as_json:
+        console.info(json.dumps(rows, indent=2))
+        return any(r["update_available"] for r in rows)
+    head = ["name", "active", "version", "source", "ref", "commit"] + (["update"] if check else [])
+    table = [head]
     for r in rows:
-        console.info("  ".join(c.ljust(w) for c, w in zip(r, widths, strict=False)) + "  " + r[4])
+        if r["repo"]:
+            source = r["repo"] + ("" if r["path"] in ("", ".") else f" ({r['path']})")
+        else:
+            source = r["source"]
+        line = [r["name"], "yes" if r["active"] else "no", r["version"] or "-", source,
+                r["ref"] or "-", (r["commit"] or "")[:10] or "-"]  # fmt: skip
+        if check:
+            if r["error"]:
+                line.append(f"error: {r['error']}")
+            elif r["update_available"]:
+                line.append(f"-> {r['latest_commit'][:10]}")
+            else:
+                line.append("up to date" if r["repo"] else "-")
+        table.append(line)
+    widths = [max(len(t[i]) for t in table) for i in range(len(head) - 1)]
+    for t in table:
+        console.info("  ".join(c.ljust(w) for c, w in zip(t, widths, strict=False)) + "  " + t[-1])
+    updates = [r["name"] for r in rows if r["update_available"]]
+    if check:
+        console.info(f"updates: {', '.join(updates)} (run `ym sync --update`)" if updates
+                     else "all plugins up to date")  # fmt: skip
+    return bool(updates)
 
 
 def remove_plugin(cfg: SiteConfig, name: str, *, keep_files: bool = False) -> None:

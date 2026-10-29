@@ -240,3 +240,29 @@ def test_doctor(site, tmp_path, monkeypatch, capsys):
 def test_doctor_outside_site(tmp_path, capsys):
     assert main(["--site-dir", str(tmp_path), "doctor"]) == 1
     assert "FAIL  site.toml" in capsys.readouterr().out
+
+
+def test_plugin_list_json_check(site, upstream, capsys):
+    S = ["--site-dir", str(site)]
+    plug = upstream("p")
+    plug.commit({"plugin.php": "<?php\n/*\nPlugin Name: P\nVersion: 1.0\n*/\n"})
+    toml = site / "site.toml"
+    toml.write_text(
+        toml.read_text() + f'\n[[plugins]]\nname = "p"\nrepo = "{plug.url}"\n\n'
+        '[[plugins]]\nname = "sample-plugin"\nactive = false\n'
+    )
+    assert main([*S, "sync"]) == 0
+    capsys.readouterr()
+    assert main([*S, "plugin", "list", "--check"]) == 0
+    out = capsys.readouterr().out
+    assert "version" in out and "1.0" in out and "up to date" in out
+    assert "all plugins up to date" in out
+    new = plug.commit({"plugin.php": "<?php\n/*\nPlugin Name: P\nVersion: 1.1\n*/\n"})
+    assert main([*S, "plugin", "list", "--check", "--json"]) == 10
+    rows = {r["name"]: r for r in json.loads(capsys.readouterr().out)}
+    assert rows["p"]["version"] == "1.0" and rows["p"]["latest_commit"] == new
+    assert rows["p"]["update_available"] is True
+    assert rows["sample-plugin"]["source"] == "core"
+    assert rows["sample-plugin"]["update_available"] is None
+    assert main([*S, "plugin", "list"]) == 0  # offline by default
+    assert "-> " not in capsys.readouterr().out

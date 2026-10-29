@@ -226,7 +226,7 @@ class RsyncTarget(Target):
             console.warn(
                 "YOURLS is not installed in this database yet: open "
                 f"{self.spec.url}/admin/install.php to install, then run "
-                f"`ym plugins {self.spec.name}`. Skipping DB upgrade and plugins."
+                f"`ym plugin apply {self.spec.name}`. Skipping DB upgrade and plugins."
             )
             plugin_res: dict[str, Any] = {}
         else:

@@ -107,7 +107,17 @@ def build_parser() -> argparse.ArgumentParser:
         "plugin", parents=[common], help="search, add, remove, list, enable or disable plugins"
     )
     psub = p.add_subparsers(dest="plugin_cmd", metavar="ACTION", required=True)
-    psub.add_parser("list", parents=[common], help="plugins in site.toml with source and lock")
+    q = psub.add_parser(
+        "list", parents=[common], help="plugins in site.toml: version, source, lock, updates"
+    )
+    q.add_argument("--json", action="store_true", help="machine-readable output")
+    q.add_argument(
+        "--check", action="store_true", help="ask upstream for newer commits (exit 10 if any)"
+    )
+    q = psub.add_parser(
+        "apply", parents=[common], help="apply the active plugin set on a target (= ym plugins)"
+    )
+    q.add_argument("target")
     q = psub.add_parser(
         "search",
         parents=[common],
@@ -171,7 +181,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true", help="show the tag and notes only")
     p.add_argument("-m", "--message", help="extra text for the release notes")
 
-    p = sub.add_parser("plugins", parents=[common], help="apply the active plugin set on a target")
+    p = sub.add_parser("plugins", parents=[common], help="alias of `ym plugin apply TARGET`")
     p.add_argument("target")
 
     p = sub.add_parser(
@@ -501,7 +511,12 @@ def _dispatch(args: argparse.Namespace) -> int:
         from .plugincmd import list_plugins, set_active
 
         if args.plugin_cmd == "list":
-            list_plugins(cfg)
+            updates = list_plugins(cfg, check=args.check, as_json=args.json)
+            return EXIT_UPDATES if updates else EXIT_OK
+        if args.plugin_cmd == "apply":
+            from .deploy import get_target
+
+            get_target(cfg, args.target).apply_plugins()
             return EXIT_OK
         if args.plugin_cmd == "add":
             from .plugincmd import add_plugin

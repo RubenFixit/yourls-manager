@@ -363,8 +363,7 @@ plugins, YOURLS version, DB version. ym would read it over SFTP for adopt/status
 
 ### 11.1 Plugins: `ym plugin …`
 
-Status: search, add, remove, enable, disable and list are built. Not yet: `list --json`,
-`--check` and the header-version column, and `plugin apply` (still `ym plugins TARGET`).
+Status: built. `list --check` exits 10 when an update is available (like `ym check`).
 
 Catalog: `https://raw.githubusercontent.com/YOURLS/awesome/main/data/plugins.yml` (the
 awesome-yourls data file: `name`, `url`, `description`, `category`, `tags`, `official`,

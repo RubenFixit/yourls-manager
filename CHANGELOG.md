@@ -20,6 +20,10 @@ All notable changes to this project are documented here. The format follows
   uncommitted and unpushed changes) and targets (login, PHP, server config, https, install /
   upgrade state, deployed commit vs HEAD); exits 1 on failures.
 
+- `ym plugin list` shows each plugin's header version; `--json`, and `--check` (asks upstream
+  for newer commits, exit 10 if any).
+- `ym plugin apply TARGET`, the new name of `ym plugins TARGET` (kept as an alias).
+
 ### Changed
 
 - New dependency: PyYAML (to read the plugin catalog).
