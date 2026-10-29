@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Two hints still described the pre-0.7 manual steps: a missing server-local config on an
+  rsync target now points at `ym target config`, and `ym new` without a deploy host points
+  at `ym target add prod`.
+
 ## [0.7.0] - 2026-10-29
 
 One consistent command set: noun + verb groups (`target`, `plugin`, `template`, `release`).

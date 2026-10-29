@@ -82,10 +82,8 @@ class RsyncTarget(Target):
         if not r.exists(self.config_file, "-f"):
             raise UsageError(
                 f"server-local config not found: {self.config_file} on {r.describe()}\n"
-                "Create it from server/config.example.php in the site repo, e.g.:\n"
-                f"  scp server/config.example.php {r.describe()}:{self.config_file}\n"
-                "then edit the database credentials, cookie key and users, and"
-                f" `chmod 600 {self.config_file}`."
+                f"Create it with `ym target config {self.spec.name}` (or"
+                f" `ym target config {self.spec.name} --from-existing` when adopting)."
             )
         console.info(f"  config {self.config_file}")
         self._preflighted = True

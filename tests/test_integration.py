@@ -347,7 +347,7 @@ def test_deploy_missing_config_exits_2(tmp_path, upstream, monkeypatch, capsys):
     assert main([*S, "deploy", "here", "--skip-verify"]) == 2
     err = capsys.readouterr().err
     assert f"{tmp_path}/www/yourls-config/t.php" in err
-    assert "server/config.example.php" in err
+    assert "ym target config here" in err
     assert main([*S, "deploy", "nope"]) == 2
 
 

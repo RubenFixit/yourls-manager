@@ -154,7 +154,7 @@ def new_site(
     console.info("Next steps:")
     console.info(f"  cd {dest}")
     if not prod:
-        console.info("  # edit site.toml: uncomment and fill in [deploy.targets.prod]")
+        console.info("  ym target add prod             # where and how the site deploys")
     console.info("  ym target config prod          # create the server-local config (secrets)")
     console.info("  ym deploy prod --dry-run       # preview the first deploy")
     console.info("  ym deploy prod")
