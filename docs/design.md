@@ -1,4 +1,8 @@
-# yourls-manager design (v0.1)
+# yourls-manager design
+
+Current as of **v0.7.0** (template v0.6.0). Section titles name the version that introduced a
+feature; the text describes what is implemented now, with current command names. §14 records
+the v0.7 command regrouping and maps old names to new ones.
 
 Two public repos under `github.com/RubenFixit`:
 
@@ -9,7 +13,7 @@ Two public repos under `github.com/RubenFixit`:
 
 Goal: the complete configuration of a YOURLS site lives in its own Git repo, is
 reproducible, and deploys with one command. Sites update the tool through a version bump
-and update template-owned files with `copier update`.
+and update template-owned files with `ym template update` (`copier update`).
 
 Lineage: generalized from `redirect-services` (`manage_yourls_plugins.py`,
 `update_yourls_backend.py`, `restore_tracked_files.py`, `yourls-config-loader.php`,
@@ -21,10 +25,11 @@ Lineage: generalized from `redirect-services` (`manage_yourls_plugins.py`,
 
 ```
 my-site/
-├── .copier-answers.yml      # copier state (enables `copier update`)
+├── .copier-answers.yml      # copier state (enables `ym template update`)
+├── .python-version
 ├── pyproject.toml           # pins yourls-manager (git tag source via [tool.uv.sources])
 ├── uv.lock
-├── site.toml                # THE site definition (hand-edited)
+├── site.toml                # THE site definition (hand-edited, or via ym plugin/target commands)
 ├── yourls.lock.json         # written by the tool: exact core + plugin commits & hashes
 ├── yourls/                  # VENDORED upstream tree, owned by the tool. Never hand-edit.
 │   ├── admin/ includes/ ... # YOURLS core at the locked tag
@@ -35,20 +40,24 @@ my-site/
 │   └── user/
 │       ├── config.php       # shim -> server-local config outside web root
 │       └── plugins/
-│           └── site-branding/plugin.php   # logo/CSS via hooks (replaces tracked-file restores)
+│           └── site-branding/           # logo/CSS via hooks (replaces tracked-file restores)
+│               ├── plugin.php
+│               └── assets/brand.css
 ├── server/
 │   └── config.example.php   # template for the server-local config (secrets live on server only)
 ├── tests/
-│   └── redirects.toml       # redirect expectations checked by `verify`
+│   └── redirects.toml       # redirect expectations checked by `ym verify`
+├── adopt-review/            # only after `ym adopt`: report + files to merge by hand (never deployed)
 ├── dist/                    # build output (gitignored)
 └── .github/
-    ├── workflows/deploy.yml         # deploy on tag push / manual dispatch
-    ├── workflows/check-updates.yml  # weekly: check + open PR with updates
+    ├── workflows/deploy.yml         # release tags / manual dispatch -> `ym deploy` (ci = true targets only)
+    ├── workflows/check-updates.yml  # weekly: `ym update --check`, then `ym update` -> PR
     └── dependabot.yml               # github-actions (+ uv) updates
 ```
 
 Ownership rules:
-- `yourls/` is written only by `yourls-manager core` and `yourls-manager sync`.
+- `yourls/` and `yourls.lock.json` are written only by `ym core`, `ym plugin sync` (and the
+  commands built on them: `ym update`, `ym plugin add/remove`, `ym new`, `ym adopt`).
 - Local patches to a vendored plugin go in `overlay/user/plugins/<name>/...` (overlay wins).
   This replaces `preserve_paths` from redirect-services.
 - Secrets never enter Git.
@@ -58,13 +67,13 @@ Ownership rules:
 ```toml
 [site]
 name = "Example Go Links"       # display name
-slug = "go-example-com"         # [a-z0-9-]+; used for server config filename
+slug = "go-example-com"         # [a-z0-9-]+; used for server config / state / backup names
 url  = "https://go.example.com" # public base URL, no trailing slash
 
 [core]
 repo    = "https://github.com/YOURLS/YOURLS.git"   # default
-version = "1.10.6"                                 # tag, or "latest" is NOT allowed here (lock resolves)
-exclude = [".github", ".git*", "tests", "*.md"]    # optional; glob patterns relative to repo root, never removes LICENSE/readme.html unless listed
+version = "1.10.6"                                 # exact tag; "latest" is NOT allowed here (`ym core latest` resolves it)
+exclude = [".github", ".git*", "tests", "*.md"]    # optional; globs relative to the repo root
 
 [[plugins]]
 name   = "keep-query-string"                       # dir name under user/plugins
@@ -81,20 +90,31 @@ active = true
 out = "dist"                                       # default
 
 [deploy.targets.prod]
-type        = "rsync"                              # "rsync" (remote via ssh, or local when host omitted)
-host        = "example.dreamhost.com"              # omit => local filesystem target
+type        = "rsync"                              # "rsync" (default) or "sftp" (§10)
+host        = "example.dreamhost.com"              # omit => local filesystem target (rsync only)
 user        = "ruben"
 port        = 22
 path        = "go.example.com"                     # web root; relative = relative to remote $HOME
-php         = "php"                                # e.g. /usr/local/php83/bin/php on DreamHost
-config_file = "yourls-config/go-example-com.php"   # server-local config; default "<parent of path>/yourls-config/<slug>.php"
-backup_dir  = "yourls-backups/go-example-com"      # default "<parent of path>/yourls-backups/<slug>"
-protect     = [".well-known/"]                     # remote paths rsync --delete must not touch
-backup_keep = 10                                   # number of DB dumps retained
-url         = "https://go.example.com"             # default [site].url; used by verify
+php         = "php"                                # rsync only; e.g. /usr/local/php83/bin/php on DreamHost
+config_file = "yourls-config/go-example-com.php"   # default "<parent of path>/yourls-config/<slug>.php"
+backup_dir  = "yourls-backups/go-example-com"      # rsync only; default "<parent of path>/yourls-backups/<slug>"
+backup_keep = 10                                   # rsync only; number of DB dumps retained
+state_dir   = ".yourls-manager/go-example-com"     # sftp only; default "<parent of path>/.yourls-manager/<slug>"
+protect     = [".well-known/"]                     # remote paths deploys never delete
+url         = "https://go.example.com"             # default [site].url; used by verify / doctor
+accept      = "release"                            # "any" (default) or "release" (§11.5)
+ci          = true                                 # deployed by the site's GitHub Actions workflow (§13); needs host
+
+[release]
+push_markers = false                               # also push deployed/<target> branches (§11.5)
 ```
 
-Validation errors are friendly and point at the key. Unknown keys warn.
+Validation errors are friendly and point at the key; unknown keys warn. Target names match
+`[A-Za-z0-9][A-Za-z0-9._-]*`; remote paths are limited to `[A-Za-z0-9._/@+~-]` so quoting
+stays trivial. `php`, `backup_dir`, `backup_keep` on an sftp target warn and are ignored.
+`ym target add` writes new target tables (§14.3); `ym plugin add/remove/enable/disable` edit
+`[[plugins]]` (§11.1). All of these edit the file as text (comments kept), re-parse, and
+restore the original if the result doesn't validate.
 
 ## 3. `yourls.lock.json`
 
@@ -114,67 +134,83 @@ Validation errors are friendly and point at the key. Unknown keys warn.
 - Plugins without `repo` are not in the lock.
 - Sorted keys, 2-space indent, trailing newline (stable diffs).
 
-## 4. CLI (`yourls-manager`, alias `ym`)
+## 4. Core commands (v0.1)
 
-> Command names in §4–§13 are as they were introduced. v0.7 regrouped and renamed several;
-> §14 has the current names and the old → new map.
-
-Global: `--site-dir PATH` (default: cwd; searched upward for `site.toml`), `-v/--verbose`, `--version`.
-Exit codes: 0 ok, 1 error, 2 usage/config error, 10 updates available (`check` only; now `update --check`).
+Global: `--site-dir PATH` (default: cwd; searched upward for `site.toml`), `-v/--verbose`,
+`--version`. Exit codes: 0 ok, 1 error, 2 usage/config error, 10 updates available
+(`ym update --check`, `ym plugin list --check`).
 
 | Command | Behavior |
 |---|---|
-| `status` | Show core version, plugins (locked commit short sha, active flag), and drift: files in `yourls/` whose hash differs from the lock, plugins in toml but not lock, etc. |
-| `check` | `git ls-remote` core tags (highest stable semver, skip -rc/-beta) and each plugin ref; print table of current vs available. Exit 10 if any update. `--json` output. |
-| `core [--version V\|latest] [--dry-run] [--force]` | Fetch core at tag, replace `yourls/` except managed plugin dirs, apply excludes, update lock and `site.toml [core].version`. Refuse if `yourls/` has uncommitted git changes unless `--force` (Git is the backup). |
-| `sync [--plugin NAME ...] [--update] [--dry-run] [--force]` | Vendor plugins into `yourls/user/plugins/<name>`. Default: use locked commit if lock entry's repo/ref/path match toml, else resolve. `--update`: re-resolve refs. Removes managed plugin dirs no longer in toml (only dirs recorded in previous lock). Same dirty-tree guard. |
-| `build [--out DIR]` | Clean `dist/`, copy `yourls/` then `overlay/` (log overrides with -v). Release info is never written into the public tree. Verify lock hashes match before building (fail on drift unless `--allow-drift`). |
-| `deploy TARGET [--dry-run] [--no-build] [--skip-backup] [--skip-verify]` | See §5. |
-| `verify TARGET\|--url URL` | Health check + redirect tests from `tests/redirects.toml`. |
-| `plugins TARGET` | Apply active plugin set only (runs helper). |
+| `ym core [VERSION\|latest] [--dry-run] [--force]` | Fetch core at the tag (default `[core].version`), replace `yourls/` except managed plugin dirs, apply excludes, update the lock and `[core].version`. Refuse if `yourls/` has uncommitted git changes unless `--force` (Git is the backup). |
+| `ym plugin sync [NAME ...] [--update] [--dry-run] [--force]` | Vendor plugins into `yourls/user/plugins/<name>`. Default: use the locked commit if the lock entry's repo/ref/path match site.toml, else resolve. `--update`: re-resolve refs. Removes managed plugin dirs no longer in site.toml (only dirs recorded in the previous lock). Same dirty-tree guard. |
+| `ym build [--out DIR] [--allow-drift]` | Clean `dist/`, copy `yourls/` then `overlay/` (log overrides with -v). Release info is never written into the public tree. Fails on drift from the lock unless `--allow-drift`. Refuses output dirs that are the repo, `yourls/`, `overlay/`, `$HOME` or look like a repository. |
+| `ym deploy TARGET [...]` | See §5 (rsync) and §10.3 (sftp); policy and markers in §11.5. |
+| `ym verify TARGET\|--url URL` | `GET /health.php` (expects `{"ok": true}`), then each case in `tests/redirects.toml`; redirects are not followed. |
+| `ym plugin apply TARGET` | Make the target's active plugins exactly the site.toml set (runs the helper; rsync only). |
+| `ym update [--check]`, `ym doctor [--local]` | §11.2, §11.3. |
 
 Implementation notes:
-- Python ≥ 3.11, stdlib only at runtime (`tomllib`, `argparse`, `urllib`, `subprocess`, `json`, `hashlib`). Dev deps: `pytest`, `ruff`.
-- Git via subprocess. Fetch a sha: `git init` + `git fetch --depth 1 origin <sha>` + checkout FETCH_HEAD; fall back to full clone if the server refuses sha fetches.
-- Fetch into a temp dir, assemble, then swap atomically-ish (rename old to `.yourls.old-<ts>`, move new in, delete old) so a failure never leaves a half tree.
+- Python ≥ 3.11. Runtime dependencies: `paramiko` (SFTP, §10), `bcrypt` (sftp
+  `target config`, §10.4) and `PyYAML` (plugin catalog, §11.1), each imported lazily by the
+  commands that need them; everything else is stdlib (`tomllib`, `argparse`, `urllib`,
+  `subprocess`, `json`, `hashlib`). Copier is never a dependency (run via `uvx copier`).
+  Dev: `pytest`, `ruff`; CI runs ruff (lint + format) and pytest on 3.11–3.13 and checks the
+  wheel contains `ym-helper.php`.
+- Git via subprocess. Fetch a sha: `git init` + `git fetch --depth 1 origin <sha>` + checkout
+  FETCH_HEAD; fall back to a full clone if the server refuses sha fetches.
+- Fetch into a temp dir on the same filesystem, assemble, then swap (rename old to
+  `.<name>.old-<ts>-<pid>`, move new in, delete old) so a failure never leaves a half tree.
 - Never follow symlinks out of the source tree; skip `.git`.
+- Old (pre-0.7) command spellings are hidden aliases that warn (§14.1).
 
 ## 5. Deploy flow (`type = "rsync"`)
 
-Remote commands run as `ssh -p PORT user@host -- <cmd>`; when `host` is omitted the same
-commands run locally (used by tests and for same-box hosts). Remote relative paths are
-relative to `$HOME`. Use `shlex.quote` everywhere.
+Remote commands run as `ssh -p PORT user@host -- <cmd>` with `BatchMode=yes` (so targets need
+key login: `ym target login`); when `host` is omitted the same commands run locally (tests,
+same-box hosts). Remote relative paths are relative to `$HOME`. `shlex.quote` everywhere.
 
-1. **build** (unless `--no-build`).
-2. **preflight**: ssh reachable; `php -v` ≥ 8.1; `config_file` exists (if missing: print
-   instructions referencing `server/config.example.php` and exit 2).
-3. **upload helper**: rsync `yourls_manager/php/ym-helper.php` to
-   `~/.yourls-manager/ym-helper-<toolversion>.php`.
-4. **backup** (unless `--skip-backup`, or first deploy where DB has no tables):
-   `php ym-helper.php dump --config=CONFIG --out=BACKUP_DIR/<slug>-<UTCts>.sql.gz`, prune to `backup_keep`.
-5. **rsync**: `rsync -az --delete --delay-updates --filter='P <protect>'... dist/ dest/`
-   (`--dry-run -i` passes through for `deploy --dry-run`, which stops after printing).
-6. **db upgrade**: `php ym-helper.php upgrade --root=PATH` (no-op if not needed).
-7. **plugins**: `php ym-helper.php plugins --root=PATH --active=a,b,c` — makes the active set
-   exactly the toml set; prints activated/deactivated.
-8. **record**: write `~/.yourls-manager/<slug>/release.json` (git commit, dirty flag, tool version,
-   lock sha256, UTC time, core version) — outside web root.
-9. **verify** (unless `--skip-verify`).
+Before the target runs, `ym deploy` applies the deploy policy (§11.5).
 
-Rollback in v0.1 = redeploy a previous git tag (+ restore dump if needed); documented, not automated.
-Future targets (`docker`, `windows-release`) plug into a `targets` registry keyed by `type`.
+1. **build** (unless `--no-build`, which requires an existing `dist/`).
+2. **preflight**: rsync available locally (else: deploy from Linux, macOS, WSL or CI); ssh
+   reachable and rsync present on the server; `php` ≥ 8.1; `config_file` exists (else exit 2
+   pointing at `ym target config TARGET` / `--from-existing`).
+3. `--dry-run`: `rsync --dry-run -i` (itemized changes), then stop.
+4. **upload helper**: rsync `yourls_manager/php/ym-helper.php` to
+   `~/.yourls-manager/ym-helper-<toolversion>.php` (mode 600).
+5. **backup** (unless `--skip-backup`): `php ym-helper.php dump --config=CONFIG
+   --out=BACKUP_DIR/<slug>-<UTCts>.sql.gz`; the helper skips an empty database (first
+   deploy); prune to `backup_keep`.
+6. **rsync**: `rsync -az --delete --delay-updates --filter='P <protect>'... dist/ dest/`.
+7. **state**: helper `info`. Not installed yet → warn with the `admin/install.php` link and
+   `ym plugin apply TARGET` for afterwards; skip steps 8–9.
+8. **db upgrade**: helper `upgrade --root=PATH` (no-op if not needed).
+9. **plugins**: helper `plugins --root=PATH --active=a,b,c`: the active set becomes exactly the
+   site.toml set; prints activated/deactivated.
+10. **record**: `~/.yourls-manager/<slug>/release.json` (0600, outside the web root): site,
+    target, git commit + dirty flag, tool version, lock sha256, core version, UTC time,
+    backup path, active plugins, plus `tag` / `forced` from the policy check.
+11. **verify** (unless `--skip-verify`).
+
+Afterwards `ym deploy` moves the `deployed/<target>` marker (§11.5), even when verify failed.
+Rollback = redeploy a previous release tag (+ restore the dump if needed); documented, not
+automated. Target types are registered in `deploy.TARGET_TYPES` (`rsync`, `sftp`); future
+types (`docker`, `windows-release`) plug in there.
 
 ## 6. PHP helper contract (`ym-helper.php`)
 
 CLI only (`PHP_SAPI === 'cli'` else exit). Output: one JSON object on stdout; human logs on
-stderr; exit 0 ok / 1 error.
+stderr; exit 0 ok / 1 error. `YM_HELPER_VERSION` matches the tool version. The config file
+comes from `YOURLS_CONFIG_FILE` (ym sets it to the target's `config_file`).
 
 | Command | Notes |
 |---|---|
-| `info --root=R` | `{php, yourls_version, db_version_code, db_version_installed, installed, upgrade_needed, active_plugins}` |
-| `dump --config=C --out=F` | Requires the config file only (no YOURLS bootstrap) to read `YOURLS_DB_*`; host may be `host:port` or `host:/socket`; writes a 0600 temp `--defaults-extra-file`; `mysqldump --single-transaction --no-tablespaces --default-character-set=utf8mb4 | gzip`. Creates out dir. |
-| `upgrade --root=R` | Set `$_SERVER` (HTTP_HOST from YOURLS_SITE, REQUEST_URI='/') ; `define('YOURLS_UPGRADING', true)`; require `R/includes/load-yourls.php`; if `!yourls_is_installed()` → error "run install via browser first"; if `yourls_upgrade_is_needed()`: refuse when old db_version == 100 (1.3); else `ob_start(); yourls_upgrade(1,…); yourls_upgrade(3,…); ob_end_clean();` then verify not needed. |
-| `plugins --root=R --active=a,b` | Same bootstrap; plugin ids are `<dir>/plugin.php`; error if a requested plugin file is missing; deactivate active ones not in set, activate missing ones; report. |
+| `version` | `{helper_version, php}`; no YOURLS bootstrap. |
+| `info --root=R` | `{php, yourls_version, db_version_code, db_version_installed, installed, upgrade_needed, active_plugins}`; bootstraps with `YOURLS_INSTALLING` so it never redirects. |
+| `dump --config=C --out=F` | Requires the config file only (no YOURLS bootstrap) to read `YOURLS_DB_*`; host may be `host:port` or `host:/socket`; writes a 0600 temp `--defaults-extra-file`; `mysqldump --single-transaction --no-tablespaces --default-character-set=utf8mb4 | gzip`. Creates the out dir. Reports `skipped` when the database has no tables. |
+| `upgrade --root=R` | Fake request env (HTTP_HOST from YOURLS_SITE, REQUEST_URI='/'); `define('YOURLS_UPGRADING', true)`; require `R/includes/load-yourls.php`; if `!yourls_is_installed()` → error "run install via browser first"; if `yourls_upgrade_is_needed()`: refuse when old db_version == 100 (1.3); else run the upgrade steps with output buffered, then verify not needed. |
+| `plugins --root=R --active=a,b` | Same bootstrap; plugin ids are `<dir>/plugin.php`; error if a requested plugin file is missing; deactivate active ones not in the set, activate missing ones; report. |
 
 ## 7. Site-side PHP pieces (template)
 
@@ -183,7 +219,8 @@ stderr; exit 0 ok / 1 error.
 2. else `dirname(__DIR__, 2) . '/yourls-config/<slug>.php'` (sibling of web root);
 3. else HTTP 503 "server-local configuration missing" (CLI: message to stderr, exit 1).
 
-`overlay/health.php`: `{"ok": true}` / 503 `{"ok": false}`; checks DB `SELECT 1` using config constants. No version disclosure.
+`overlay/health.php`: `{"ok": true}` / 503 `{"ok": false}`; checks DB `SELECT 1` using config
+constants. No version disclosure.
 
 `tests/redirects.toml`:
 ```toml
@@ -195,28 +232,32 @@ location = "https://..." # optional; exact match, or prefix match if endswith "*
 
 ## 8. Release & update flow
 
-- Tool: tags `vX.Y.Z` on `RubenFixit/yourls-manager`; CHANGELOG; CI (ruff + pytest on 3.11–3.13).
-- Site pins: `[tool.uv.sources] yourls-manager = { git = "https://github.com/RubenFixit/yourls-manager", tag = "v0.1.0" }`.
-- Template update: `uvx copier update` in the site repo (answers in `.copier-answers.yml`).
-- Weekly CI in the site: `ym check`; if exit 10 → `ym sync --update` and/or `ym core --version latest` → PR.
+- Tool: tags `vX.Y.Z` on `RubenFixit/yourls-manager`; CHANGELOG (Keep a Changelog); CI as in §4.
+- Template: tags `vX.Y.Z` on `RubenFixit/yourls-site-template`; its `manager_version`
+  default moves only after the matching tool tag exists.
+- Site pins: `[tool.uv.sources] yourls-manager = { git = "https://github.com/RubenFixit/yourls-manager", tag = "v0.7.0" }`.
+- Template update: `ym template update [--manager-version vX.Y.Z]` (§9).
+- Weekly CI in the site (`check-updates.yml`): `ym update --check`; on exit 10,
+  `ym update --force` (core first, then plugins; `--force` because core leaves `yourls/`
+  modified in the throwaway checkout) and open a PR with the check output.
+- Site releases and deploys: §11.4–§11.6.
 
 ---
 
 ## 9. Onboarding commands (v0.2)
 
-New top-level commands. All run with the globally installed tool
+All run with the globally installed tool
 (`uv tool install git+https://github.com/RubenFixit/yourls-manager`), so they work before a
 site repo (and its `uv.lock`) exists. Copier is invoked as a subprocess: `uvx copier` when `uv`
-is on PATH, else `copier` on PATH, else a UsageError explaining how to install uv. Copier stays
-out of runtime dependencies (stdlib-only rule).
+is on PATH, else `copier` on PATH, else a UsageError explaining how to install uv.
 
 | Command | Behavior |
 |---|---|
-| `ym new [DEST] [--template SRC] [--vcs-ref REF] [--data K=V ...] [--defaults] [--no-vendor] [--no-git]` | Create a site repo from the template (default `gh:RubenFixit/yourls-site-template`, override with `--template` or env `YM_TEMPLATE`). Copier asks its questions interactively unless `--defaults`. Then, unless `--no-vendor`: `ym core` (version from site.toml) + `ym sync` in DEST. Unless `--no-git`: `git init -b main`, `git add -A`, initial commit "Create site from yourls-site-template" (skip with a warning if git identity is missing). Best-effort `uv lock` (warn on failure: e.g. the pinned yourls-manager tag isn't published yet). Ends by printing next steps (`ym server-config prod`, `ym deploy prod --dry-run`). Refuses a non-empty DEST. |
-| `ym template-update [--vcs-ref REF] [--manager-version vX.Y.Z] [--defaults]` | In a site repo: refuse if the git tree is dirty; run `copier update` (passing `--data manager_version=...` when given); best-effort `uv lock`; print `git diff --stat` and remind to review/commit. |
-| `ym server-config TARGET [--force] [--from-existing] [--db-host H] [--db-name N] [--db-user U] [--db-prefix P] [--admin-user U]` | Create the server-local config at the target's `config_file` from `server/config.example.php`: fills DB constants, `YOURLS_SITE` (site url), a fresh `YOURLS_COOKIEKEY` (`secrets.token_hex(32)`) and one admin user. Passwords come from env `YM_DB_PASSWORD` / `YM_ADMIN_PASSWORD` or `getpass` prompts (never argv). The admin password is hashed **on the target's PHP** (`phpass:` + `password_hash(PASSWORD_DEFAULT)` with `$`→`!`, the format YOURLS uses), passing the password on stdin. Written with mode 0600 via the runner; refuses to overwrite unless `--force` (then the old file is first copied to `<file>.bak-<UTCts>`). `--from-existing`: instead copy the existing install's config (`<web root>/user/config.php`, else `<web root>/includes/config.php`) to `config_file` — used when adopting; refuses if that file is itself the ym shim. Values replaced by regex on the `define( 'NAME', ... );` lines and the `$yourls_user_passwords` block; fail loudly if a placeholder line is not found. |
-| `ym adopt (--from-target TARGET \| --from-dir PATH) [--ignore GLOB ...] [--dry-run]` | Bring an existing, unmanaged YOURLS install under management, inside a site repo created by `ym new`. See below. |
-| `ym setup` | Interactive wizard (TTY only; exits 2 otherwise). Asks: new site or adopt existing install → destination dir → runs `ym new` (copier asks site questions; for adopt it passes `--data include_example_plugins=false`) → for adopt: source (the `prod` target if configured, or a local path) → `ym adopt` → offers `ym server-config prod` (`--from-existing` for adopt, when the config file is missing) → offers `ym deploy prod --dry-run` → prints a summary of what was done and what remains. Each step prints the equivalent command so users learn the non-interactive flow. |
+| `ym new [DEST] [--template SRC] [--vcs-ref REF] [--data K=V ...] [--defaults] [--no-vendor] [--no-git]` | Create a site repo from the template (default `gh:RubenFixit/yourls-site-template`, override with `--template` or env `YM_TEMPLATE`). Copier asks its questions interactively unless `--defaults`. Then, unless `--no-vendor`: `ym core` (version from site.toml) + `ym plugin sync` in DEST. Unless `--no-git`: `git init -b main`, `git add -A`, initial commit "Create site from yourls-site-template" (skip with a warning if git identity is missing). Best-effort `uv lock` (warn on failure: e.g. the pinned yourls-manager tag isn't published yet). Ends by printing next steps (`ym target add prod` when there is no prod target, `ym target config prod`, `ym deploy prod --dry-run`). Refuses a non-empty DEST. |
+| `ym template update [--vcs-ref REF] [--manager-version vX.Y.Z] [--defaults]` | In a site repo: refuse if the git tree is dirty; run `copier update` (passing `--data manager_version=...` when given); best-effort `uv lock`; print `git diff --stat` and remind to review/commit. |
+| `ym target config TARGET [--force] [--from-existing] [--db-host H] [--db-name N] [--db-user U] [--db-prefix P] [--admin-user U]` | Create the server-local config at the target's `config_file` from `server/config.example.php`: fills DB constants, `YOURLS_SITE` (target url), a fresh `YOURLS_COOKIEKEY` (`secrets.token_hex(32)`) and one admin user. Passwords come from env `YM_DB_PASSWORD` / `YM_ADMIN_PASSWORD` or `getpass` prompts (never argv). rsync targets: the admin password is hashed **on the target's PHP** (`phpass:` + `password_hash(PASSWORD_DEFAULT)` with `$`→`!`, the format YOURLS uses), passing the password on stdin (sftp: §10.4). Written with mode 0600; refuses to overwrite unless `--force` (then the old file is first copied to `<file>.bak-<UTCts>`). `--from-existing`: instead copy the existing install's config (`<web root>/user/config.php`, else `<web root>/includes/config.php`) to `config_file` — used when adopting; refuses if that file is itself the ym shim. Values replaced by regex on the `define( 'NAME', ... );` lines and the `$yourls_user_passwords` block; fail loudly if a placeholder line is not found. |
+| `ym adopt (--from-target TARGET \| --from-dir PATH) [--ignore GLOB ...] [--active A,B,...] [--dry-run]` | Bring an existing, unmanaged YOURLS install under management, inside a site repo created by `ym new`. See below. |
+| `ym init [DIR]` | Interactive wizard (TTY only; exits 2 otherwise), resumable. Asks: new site or adopt existing install → destination dir → runs `ym new` (copier asks the site questions; for adopt it passes `--data include_example_plugins=false`) → offers `ym target add prod` when site.toml has no prod target → checks the login to prod and offers `ym target login prod` if it fails → for adopt: source (the `prod` target if configured, or a local path) → `ym adopt` → offers `ym target config prod` (`--from-existing` for adopt) when the config file is missing → offers `ym deploy prod --dry-run` → lists the manual admin steps for sftp targets → prints what was done and what remains. Each step prints the equivalent command. Progress: `<site>/.git/ym-init.json` plus a pointer to the last unfinished site in `$XDG_STATE_HOME/yourls-manager/init.json`; `ym init` (or `ym init DIR`) offers to resume and skips finished steps. |
 
 ### `ym adopt` details
 
@@ -224,13 +265,13 @@ out of runtime dependencies (stdlib-only rule).
    into a temp dir (read-only on the server; excludes `--ignore` patterns), and runs the helper
    `info` there to get `yourls_version` and `active_plugins` (requires the config — if
    `config_file` is missing, the helper is pointed at the existing `user/config.php` via
-   `YOURLS_CONFIG_FILE`).
+   `YOURLS_CONFIG_FILE`). sftp targets: §10.4.
 2. **Version**: read `includes/version.php`; resolve the matching upstream tag (error listing
    nearby tags if none). Write it to site.toml `[core].version` and vendor it with `ym core`.
 3. **Diff vs pristine core** (upstream tree at that tag, before `exclude`): for each file in the
    snapshot outside `user/plugins/`, `user/config.php`, `includes/config.php`, and the ignore list
    (defaults: `.well-known/**`, `**/error_log`, `**/*.log`, `**/.DS_Store`, `**/Thumbs.db`,
-   `.git/**`, `.htaccess` is NOT ignored):
+   `.git/**`; `.htaccess` is NOT ignored):
    - identical to upstream → nothing;
    - modified or added → copy into `overlay/` at the same path, unless overlay already has a
      template-owned file there (`.htaccess`, `health.php`, `user/config.php`, the
@@ -242,13 +283,13 @@ out of runtime dependencies (stdlib-only rule).
    - anything else → copy as-is into `overlay/user/plugins/<name>/` (site-owned, exactly what
      runs today) and append a `[[plugins]]` entry without `repo`, with a comment carrying the
      header's `Plugin URI` as a hint for switching to a managed `repo=` later;
-   - `active` comes from the helper's `active_plugins` (target mode). In dir mode, if PHP and a
-     config are available locally the helper is used; otherwise every adopted plugin is written
-     `active = true` with a `# TODO verify` comment and a loud warning (deploy makes the active
-     set exactly site.toml's).
+   - `active` comes from `--active` when given, else the helper's `active_plugins` (rsync
+     target, or dir mode when PHP and a config are available locally), else a per-plugin
+     question on a terminal, else `active = true` with a `# TODO verify` comment and a loud
+     warning (deploy makes the active set exactly site.toml's).
    - site.toml plugins that are not present in the snapshot → warning listing them.
-   - site.toml is edited textually (append `[[plugins]]` blocks; update `[core].version` via the
-     existing `set_core_version`), preserving comments.
+   - site.toml is edited textually (append `[[plugins]]` blocks; update `[core].version`),
+     preserving comments.
 5. **Verify parity**: build `dist/` and compare to the snapshot (same ignore rules, skipping the
    config files): print counts of files that a deploy would add / change / delete, list them with
    `-v`. Template-owned overlay files are expected to differ; everything else should be zero.
@@ -257,9 +298,9 @@ out of runtime dependencies (stdlib-only rule).
    deployed (it's outside `overlay/`) and is safe to commit or delete.
 7. `--dry-run`: do steps 1–3 analysis and print the plan; write nothing.
 
-Next steps printed: review `adopt-review/`, `ym server-config TARGET --from-existing` (if the
+Next steps printed: review `adopt-review/`, `ym target config TARGET --from-existing` (if the
 target has no server-local config yet), `ym deploy TARGET --dry-run`, then deploy, then
-`ym core --version latest` + deploy to actually update the install.
+`ym core latest` (or `ym update`) + deploy to actually update the install.
 
 ---
 
@@ -274,7 +315,7 @@ it); a small companion plugin is a possible later step (see 10.7).
 ```toml
 [deploy.targets.prod]
 type   = "sftp"
-host   = "ssh.example.com"
+host   = "ssh.example.com"                 # required
 user   = "ruben"
 port   = 22
 path   = "go.example.com"                  # web root, relative to the SFTP login dir (or absolute)
@@ -284,32 +325,33 @@ protect = [".well-known/"]
 url = "https://go.example.com"
 ```
 `php`, `backup_dir`, `backup_keep` do not apply (warn if set). Paths use the same validation
-as rsync targets.
+as rsync targets. `ym target add NAME --type sftp ...` writes this table.
 
 ### 10.2 Connection (`transport/sftp.py`)
 
-- paramiko (new runtime dependency, imported lazily so other commands don't load it).
+- paramiko, imported lazily so other commands don't load it.
 - Honors `~/.ssh/config` for the host (HostName, Port, User, IdentityFile) when the target
   doesn't override them.
 - Host keys: `~/.ssh/known_hosts`. Unknown host: on a TTY show the SHA256 fingerprint and ask
-  to trust it (then append to known_hosts); otherwise fail with instructions (CI provides
-  known_hosts). Changed host key: always fail.
+  to trust it (then append to known_hosts); otherwise fail with instructions pointing at
+  `ym target login` (CI provides known_hosts). Changed host key: always fail.
 - Auth order: ssh-agent, IdentityFile / default keys, then password from env
   `YM_<TARGET>_PASSWORD` (TARGET upper-cased, non-alnum → `_`) or, on a TTY, a `getpass`
   prompt (asked once per command). Passwords are never stored by ym.
-- Transport interface used by deploy/adopt/server-config: `stat`, `listdir`, `walk`,
-  `read_bytes`, `write_bytes(path, data, mode)` and `upload(local, remote)` (both atomic:
-  `.<name>.ym-tmp` then `posix_rename`, falling back to remove+rename), `download`, `mkdirs`,
-  `remove`, `rmdir`, `chmod`, `home`/`normalize`.
+- Transport interface used by deploy/adopt/target config/target login: `stat`, `listdir`,
+  `walk`, `read_bytes`, `write_bytes(path, data, mode)` and `upload(local, remote)` (both
+  atomic: `.<name>.ym-tmp` then `posix_rename`, falling back to remove+rename), `download`,
+  `mkdirs`, `remove`, `rmdir`, `chmod`, `home`/`normalize`.
 
 ### 10.3 Deploy (`deploy/sftp.py`, `SftpTarget`)
 
 No rsync, so ym tracks what it deployed in a manifest outside the web root:
 `<state_dir>/manifest.json` = `{tool_version, deployed_at, git_commit, core_version, files:
-{relpath: {sha256, size}}}`; `release.json` alongside (same fields as rsync's minus files).
+{relpath: {sha256, size}}}`; `release.json` alongside (same fields as rsync's minus backup and
+plugins).
 
 1. build (unless `--no-build`); connect; preflight: web root reachable/creatable,
-   `config_file` exists (else point to `ym server-config TARGET`).
+   `config_file` exists (else point to `ym target config TARGET`).
 2. plan: local manifest of `dist/` vs remote manifest:
    - upload new files and files whose sha256 differs (no remote manifest: upload all);
    - delete files listed in the remote manifest that are no longer in `dist/` and not
@@ -323,32 +365,35 @@ No rsync, so ym tracks what it deployed in a manifest outside the web root:
 5. YOURLS state over HTTP (no PHP on the server): request `<url>/` without following
    redirects; a redirect to `admin/install.php` or `admin/upgrade.php` means install/upgrade is
    needed → print the URL to open. Always print the plugins that site.toml marks active with a
-   link to `admin/plugins.php` (ym can't verify activation). Then verify (unchanged).
-`--skip-backup` is accepted and ignored; ym prints that SFTP deploys don't back up the DB
-(use the host's backup tool) once per deploy.
+   link to `admin/plugins.php` (ym can't verify activation). Then verify.
+`--skip-backup` is accepted and ignored; ym prints once per deploy that SFTP deploys don't
+back up the DB (use the host's backup tool). `ym plugin apply` refuses sftp targets and prints
+the manual steps instead.
 
-### 10.4 Adopt / server-config / ssh-setup over SFTP
+### 10.4 Adopt / target config / target login over SFTP
 
 - `ym adopt --from-target T`: snapshot by recursive SFTP download of the web root (ignore
-  patterns applied while walking). Active plugins can't be read: `--active a,b,...`; else on a
-  TTY ask per plugin found; else `active = true  # TODO verify` + warning (existing behavior).
-  After a non-dry adopt, upload the snapshot's manifest to state_dir so the first deploy only
-  sends real differences (and may delete files that belonged to the adopted install).
-  `--active` also works for rsync targets.
-- `ym server-config T`: same content; written over SFTP with chmod 600. The admin password is
-  hashed locally with `bcrypt` (new dependency; cost 10) as `phpass:` + hash with `$2b$`→`$2y$`
-  and `$`→`!` (verified with PHP `password_verify` and YOURLS `yourls_check_password_hash`).
+  patterns applied while walking, symlinks skipped). Active plugins can't be read:
+  `--active a,b,...`; else on a TTY ask per plugin found; else `active = true  # TODO verify`
+  + warning. After a non-dry adopt, upload the snapshot's manifest to state_dir so the first
+  deploy only sends real differences (and may delete files that belonged to the adopted
+  install).
+- `ym target config T`: same content; written over SFTP with chmod 600. The admin password is
+  hashed locally with `bcrypt` (cost 10) as `phpass:` + hash with `$2b$`→`$2y$` and `$`→`!`
+  (verified with PHP `password_verify` and YOURLS `yourls_check_password_hash`).
   `--from-existing`: download the live `user/config.php` and upload it to `config_file`.
-- `ym ssh-setup T` for sftp targets: test with an SFTP connection (not a shell command, since
-  SFTP-only accounts have no shell); to install a key, connect with the password and append
-  the public key to `.ssh/authorized_keys` over SFTP (creating `.ssh` 700 / file 600).
+- `ym target login T` (`login.py`): test with an SFTP connection (not a shell command, since
+  SFTP-only accounts have no shell). If key login fails but `YM_<TARGET>_PASSWORD` logs in,
+  that counts: ym says a key is optional and only offers one. To install a key, connect with
+  the password and append the public key to `.ssh/authorized_keys` over SFTP (creating
+  `.ssh` 700 / file 600).
 
 ### 10.5 Template and wizard
 
-- `copier.yml`: new question `deploy_type` (`rsync` | `sftp`, default rsync); `php_binary` only
+- `copier.yml`: question `deploy_type` (`rsync` | `sftp`, default rsync); `php_binary` only
   asked for rsync. `site.toml.jinja` renders and documents the sftp target.
-- `ym setup`: the SSH step uses the sftp-aware check; after a deploy preview it lists the
-  manual admin steps for sftp targets.
+- `ym init`: the login step uses the sftp-aware check (`check_login(..., password=True)`);
+  after a deploy preview it lists the manual admin steps for sftp targets.
 
 ### 10.6 Docs
 
@@ -358,53 +403,58 @@ README: SFTP target section, how deletes differ from rsync, manual admin steps, 
 
 A minimal plugin that writes YOURLS state into a JSON file in state_dir whenever it changes
 (hooks like `activated_plugin` / `deactivated_plugin`, plus on version change): active
-plugins, YOURLS version, DB version. ym would read it over SFTP for adopt/status/deploy checks.
+plugins, YOURLS version, DB version. ym would read it over SFTP for adopt/doctor/deploy checks.
 
 ---
 
-## 11. Manager commands and release flow (v0.4–v0.5, built except `ym releases`)
+## 11. Manager commands and release flow (v0.4–v0.5)
+
+Built, except `ym releases TARGET` (§11.5).
 
 ### 11.1 Plugins: `ym plugin …`
-
-Status: built. `list --check` exits 10 when an update is available (like `ym check`).
 
 Catalog: `https://raw.githubusercontent.com/YOURLS/awesome/main/data/plugins.yml` (the
 awesome-yourls data file: `name`, `url`, `description`, `category`, `tags`, `official`,
 `tested`; categories block with labels). Cached in `$XDG_CACHE_HOME/yourls-manager/` for a
 day; `--refresh` forces a fetch; a stale cache is used (with a warning) when the download
-fails. `YM_CATALOG_URL` overrides the source (tests). Parsing adds the `PyYAML` dependency.
-Some entries link to a blog page rather than a repo; `add` says so and asks for the git URL.
+fails. `YM_CATALOG_URL` overrides the source (tests). Parsing uses `PyYAML`. Some entries link
+to a blog page rather than a repo; `add` says so and asks for the git URL.
 
 | Command | Behavior |
 |---|---|
-| `ym plugin search QUERY [--category SLUG] [--refresh] [--json]` | Rank catalog entries by matches in name, tags, description (name > tags > description). Show name, category, badges (official / tested), url, description; mark plugins already in `site.toml` (matched by repo URL). Empty QUERY with `--category` lists the category. |
-| `ym plugin add NAME\|URL [--name DIR] [--ref REF] [--path SUBDIR] [--inactive] [--no-sync]` | Resolve a catalog name (exact, then case-insensitive, then unique prefix) or take a git URL (GitHub web URLs like `.../tree/main/sub` are normalized to repo + ref + path). Find `plugin.php` in the fetched repo: root, else one level down; several → ask (TTY) or require `--path`. Read the header (Plugin Name, Version, Description, Requires). Directory name: `--name`, else the folder holding plugin.php, else the repo name, sanitized. Refuse duplicates (name or same repo+path). Append a `[[plugins]]` block to site.toml (text append, comments kept), then `ym sync --plugin NAME`. |
-| `ym plugin remove NAME [--keep-files]` | Remove the `[[plugins]]` block (text edit, exact block only) and, unless `--keep-files`, the vendored dir + lock entry. Prints: the next deploy deactivates it and deletes its files; plugin data (options/tables) is not removed. Core-bundled / overlay plugins: remove the entry only (overlay dir: tell the user to delete it). |
-| `ym plugin enable NAME` / `disable NAME` | Set `active = true/false` in the plugin's block (add the key if missing). |
-| `ym plugin list [--json]` | Name, source (repo / core / overlay), ref, locked commit, header version, active, update available (`--check` does the ls-remote; off by default to stay offline). |
-| `ym plugin apply TARGET` | The former `ym plugins TARGET` (kept as an alias). |
+| `ym plugin search [QUERY] [--category SLUG] [--refresh] [--json]` | Rank catalog entries by matches in name, tags, description (name > tags > description). Show name, category, badges (official / tested), url, description; mark plugins already in `site.toml` (matched by repo URL). Empty QUERY with `--category` lists the category. Works outside a site repo. |
+| `ym plugin add NAME\|URL [--name DIR] [--ref REF] [--path SUBDIR] [--inactive] [--no-sync] [--refresh]` | Resolve a catalog name (exact, then case-insensitive, then unique prefix) or take a git URL (GitHub/GitLab/Codeberg/Bitbucket web URLs like `.../tree/main/sub` are normalized to repo + ref + path). Find `plugin.php` in the fetched repo: root, else one level down; several → ask (TTY) or require `--path`. Read the header (Plugin Name, Version, Description, Requires). Directory name: `--name`, else the folder holding plugin.php, else the repo name, sanitized. Refuse duplicates (name or same repo+path) and names already used by core or overlay. Append a `[[plugins]]` block to site.toml (text append, comments kept), then `ym plugin sync NAME` (unless `--no-sync`). |
+| `ym plugin remove NAME [--keep-files]` | Remove the `[[plugins]]` block (text edit, exact block only) and, unless `--keep-files`, the vendored dir + lock entry (refused if that copy has uncommitted changes). Prints: the next deploy deactivates it and deletes its files; plugin data (options/tables) is not removed. Core-bundled / overlay plugins: remove the entry only (overlay dir: tell the user to delete it). |
+| `ym plugin enable NAME` / `disable NAME` | Set `active = true/false` in the plugin's block (add the key if missing). Applied on the next deploy. |
+| `ym plugin list [--json] [--check]` | Name, source (repo / core / overlay), ref, locked commit, header version, active, update available (`--check` does the ls-remote and exits 10 when an update exists; off by default to stay offline). |
+| `ym plugin sync [NAME ...]` | §4. |
+| `ym plugin apply TARGET` | §4 / §5 step 9. |
 
-All site.toml edits are textual and minimal; after editing, re-parse and fail (restoring
-the original) if the result doesn't validate.
+### 11.2 `ym update [--check [--json]] [--commit] [--core-only | --plugins-only] [--force]`
 
-### 11.2 `ym update [--commit] [--core-only | --plugins-only]`
+Resolve the newest stable core tag → `ym core latest` (if newer) → `ym plugin sync --update`
+→ `ym build` → summary of the lock diff (core from→to, each plugin old→new short sha,
+added/removed). Nothing to do → exit 0 with "everything is up to date". `--commit`: commit
+`site.toml`, `yourls.lock.json`, `yourls/` with a message built from the summary ("Update
+YOURLS 1.10.5 → 1.10.6; timezones a1b2c3d → d4e5f6a"). `--force` is passed to the core and
+plugin steps (dirty `yourls/`).
 
-`check` → `core --version latest` (if newer) → `sync --update` → `build` → summary of the lock
-diff (core from→to, each plugin old→new short sha, added/removed). Nothing to do → exit 0 with
-"up to date". `--commit`: commit `site.toml`, `yourls.lock.json`, `yourls/` with a message built
-from the summary ("Update YOURLS 1.10.5 → 1.10.6; timezones a1b2c3d → d4e5f6a").
+`--check` is read-only: `git ls-remote` core tags (highest stable semver, skip -rc/-beta) and
+each plugin ref; print current vs available (`--json` for scripts). Exit 10 if anything can be
+updated, 1 if a plugin ref couldn't be resolved, else 0. It refuses the other update options.
 
-### 11.3 `ym doctor [TARGET]`
+### 11.3 `ym doctor [TARGET] [--local]`
 
-Status: built (`doctor.py`). ssh is checked only when a remote rsync target exists; an
-unreachable URL is a warning until something has been deployed there.
-
-Read-only report, one line per check with ok / warn / fail and a fix hint; exit 1 on any fail.
-Local: git, uv, rsync (only if an rsync target exists), ssh; site.toml valid; lock present and no
-drift; uncommitted changes; HEAD pushed. Per target (all targets, or the one given):
-login works (ssh-setup check / SFTP login), PHP CLI version (rsync), server config present,
-`url` is https, HTTP state (ok / install pending / upgrade pending), deployed commit vs HEAD
-(from release.json).
+Read-only report, one line per check with ok / warn / FAIL and a fix hint; exit 1 on any fail.
+Local: git, uv, rsync (only if an rsync target exists), ssh (only if a remote rsync target
+exists); site name and URL; site.toml valid; lock present, locked core version + commit, and
+drift (one line per problem); uncommitted changes; git remote (none = "local only", ok) and
+HEAD pushed. Per target (all targets, or the one given): login works (`login.check_login`;
+SSH key / SFTP login), PHP CLI version (rsync), server config present, `url` is https, HTTP
+state (ok / install pending / upgrade pending; unreachable is only a warning until something
+was deployed), deployed commit vs HEAD (from release.json), and for `ci = true` targets the
+GitHub environment and secrets (§13, when gh is logged in). `--local` stops after the local
+checks (offline); it can't be combined with TARGET.
 
 ### 11.4 Releases: `ym release`
 
@@ -414,32 +464,34 @@ version, `<rev>` counts from 1 per YOURLS version, e.g. `v1.10.6-1`, `v1.10.6-2-
 
 | Command | Behavior |
 |---|---|
-| `ym release [--rc] [--push] [--dry-run] [--message TEXT]` | Requires a clean tree and no lock drift; builds. Next tag: after a final `vX-N` → `vX-(N+1)` (or `-rc.1` with `--rc`); while `vX-N-rc.k` exists without a final `vX-N` → `--rc` gives `rc.(k+1)`, plain release gives `vX-N` (equivalent to promote on HEAD). Creates an annotated tag; the tag message = release notes from the lock diff since the previous final tag plus `--message`. `--push` pushes the tag only. |
-| `ym release --promote [--push]` | Tag the commit of the newest rc as its final version (`vX-N-rc.k` → `vX-N`). Refuses if that final tag exists. |
-| `ym release --list` | Releases with dates and which targets have them deployed (from `deployed/<target>` markers). |
+| `ym release [--rc] [--push] [--dry-run] [-m TEXT]` | Requires a clean tree and no lock drift; builds. Next tag: after a final `vX-N` → `vX-(N+1)` (or `-rc.1` with `--rc`); while `vX-N-rc.k` exists without a final `vX-N` → `--rc` gives `rc.(k+1)`, plain release gives `vX-N` (equivalent to promote on HEAD). Creates an annotated tag; the tag message = release notes from the lock diff since the previous final tag, `-m` text and commit subjects. `--push` pushes the tag only (refuses before tagging when there is no `origin`). |
+| `ym release promote [--push] [--dry-run] [-m TEXT]` | Tag the commit of the newest rc as its final version (`vX-N-rc.k` → `vX-N`). Refuses if that final tag exists. |
+| `ym release list` | Releases with dates and which targets have them deployed (from `deployed/<target>` markers). |
 
 ### 11.5 Deploy policy and markers
 
-- Target key `accept = "any" | "release"` (default `"any"`; template sets prod to `"release"`).
-  `release`: HEAD must carry a final release tag (not rc) and the tree must be clean;
-  `--force` overrides with a loud warning (recorded in release.json as `forced: true`).
-- All targets: refuse a dirty tree unless `--allow-dirty` (recorded as `git_dirty: true`, as
-  today); warn when HEAD isn't on any remote branch.
-- release.json gains `tag` (exact tag at HEAD, if any). After a successful deploy ym moves the
-  local branch `deployed/<target>` to the deployed commit (`git branch -f`); with
-  `[release] push_markers = true` in site.toml it also pushes it (force). Dirty deploys don't
-  move the marker.
-- `ym releases TARGET` (P2) reads a server-side history (append-only `history.jsonl` next to
-  release.json; rsync and sftp).
+- Target key `accept = "any" | "release"` (default `"any"`; the template and `ym target add`
+  set prod to `"release"`). `release`: HEAD must carry a final release tag (not rc) and the
+  tree must be clean; `--force` overrides with a loud warning (recorded in release.json as
+  `forced: true`).
+- All targets: refuse a dirty tree unless `--allow-dirty` (recorded as `git_dirty: true`);
+  warn when HEAD isn't on any remote branch (only when a remote exists).
+- release.json carries `tag` (exact tag at HEAD, if any). After a deploy (not a dry run) ym
+  moves the local branch `deployed/<target>` to the deployed commit (`git branch -f`); with
+  `[release] push_markers = true` it also pushes it (force). Dirty deploys don't move the
+  marker.
+- Not built: `ym releases TARGET` reading a server-side history (append-only `history.jsonl`
+  next to release.json; rsync and sftp).
 
 ### 11.6 Template
 
 - Deploy workflow: tags `v*-rc.*` → target `staging` if site.toml defines it (else skip with a
-  notice); final tags `v*` without `-rc` → `prod`. The target policy is enforced by `ym deploy`
-  itself, so manual dispatch can't bypass it.
+  notice); final tags `v*` without `-rc` → `prod`; manual dispatch takes a target name. Only
+  `ci = true` targets deploy (§13). The target policy is enforced by `ym deploy` itself, so
+  manual dispatch can't bypass it.
 - site.toml: `accept = "release"` on prod; commented `staging` example with `accept = "any"`.
-- Site README: release flow (`ym release --rc`, test on staging, `ym release --promote`), tag
-  scheme, `deployed/<target>` markers; replaces the `vYYYY.MM.DD` advice.
+- Site README: release flow (`ym release --rc`, test on staging, `ym release promote`), tag
+  scheme, `deployed/<target>` markers.
 
 ## 12. Compatibility with YOURLS-PluginManager (planned, not started)
 
@@ -494,20 +546,20 @@ needs a host), which the workflow requires before it deploys a target.
    sharing an environment.
 4. Lookup first, change nothing until every target passed: environment exists?
    (`gh api repos/R/environments/E`), its secret names (`gh secret list --env`), host keys,
-   and — when a key will be made — that the normal ym login works (`check_ssh`, password
-   from `YM_<TARGET>_PASSWORD` allowed for sftp).
+   and — when a key will be made — that the normal ym login works (`login.check_login`,
+   password from `YM_<TARGET>_PASSWORD` allowed for sftp; else hint `ym target login`).
    Host keys: `ssh-keygen -F <host|[host]:port>` on `~/.ssh/known_hosts` (hashed entries
    are used as they are); not found → `ssh-keyscan`, print fingerprints, confirm on a
-   terminal (no terminal: exit 2, hint `ym ssh-setup`).
+   terminal (no terminal: exit 2, hint `ym target login`).
 5. Apply: create the environment (`PUT`) if missing. If `DEPLOY_SSH_KEY` is missing or
    `--rotate`: `ssh-keygen -t ed25519 -N ""` in a temp dir, comment
    `ym-ci-<slug>-<env>-<YYYYMMDD>`; append the public key to `~/.ssh/authorized_keys`
-   (rsync: `sh -c` over ssh, idempotent, `.ssh` 700 / file 600; sftp: `install_key_sftp`);
-   log in with only that key (`-F /dev/null -o IdentitiesOnly=yes -o IdentityAgent=none`;
-   sftp: no agent, no key search, no ssh config) like CI does; `gh secret set` from stdin;
-   delete the temp dir. `--rotate` leaves the old key authorized and says so.
-   Always (re)set `DEPLOY_KNOWN_HOSTS`. Then set `ci = true` in the target's table (text
-   edit, re-parsed) and tell the user to commit site.toml.
+   (rsync: `sh -c` over ssh, idempotent, `.ssh` 700 / file 600; sftp:
+   `login.install_key_sftp`); log in with only that key (`-F /dev/null -o IdentitiesOnly=yes
+   -o IdentityAgent=none`; sftp: no agent, no key search, no ssh config) like CI does;
+   `gh secret set` from stdin; delete the temp dir. `--rotate` leaves the old key authorized
+   and says so. Always (re)set `DEPLOY_KNOWN_HOSTS`. Then set `ci = true` in the target's
+   table (text edit, re-parsed) and tell the user to commit site.toml.
 
 `ym ci status [TARGET ...]`: for `ci = true` targets (or the named ones), environment exists
 and has both secrets, workflow file present; exit 1 otherwise. `ym doctor` runs the same
@@ -523,21 +575,31 @@ password-only SFTP hosts (the CI key replaces the password).
 
 ---
 
-## 14. Command surface (v0.7)
+## 14. Command regrouping (v0.7)
 
-Goal: one consistent noun + verb command set. Renamed commands keep their old spelling for
-one release.
+### 14.0 Why
+
+A review of the command list after v0.6 found commands that no longer fit the structure:
+`ssh-setup` also handled SFTP logins (and SFTP can work with a password), so its name was
+wrong; `server-config` was the other per-target setup step but lived at the top level; there
+was no way to add a target without editing TOML; `plugins` was a one-letter-off alias of
+`plugin apply`; `sync` vendored plugins but sat outside `ym plugin`; `core --version`
+clashed with the global `--version`; `check` duplicated a dry run of `update`; `status`
+duplicated `plugin list` plus doctor's drift check; "setup" meant three things (wizard,
+ssh-setup, ci setup); and older commands used hyphens or mode flags while newer ones used
+noun + verb groups. Goal: one consistent noun + verb command set, with the old spellings
+working for one release.
 
 ### 14.1 Deprecated spellings
 
 `cli._deprecated(sub, common, OLD, NEW, add_args, **dest)` registers `ym OLD` as a subparser
-without `help=`, so argparse leaves it out of the command list in `ym --help` (3.11–3.15). Its
-`set_defaults(deprecated=(OLD, NEW), **dest)` sets the new command's namespace keys (they
-override the `command=OLD` the subparsers action writes first). `main()` prints
-`warning: \`ym OLD\` is deprecated and will be removed in 0.8; use \`ym NEW\`` on stderr and
-dispatches as the new command. Deprecated options (`ym core --version`, `ym release
---promote/--list`) are `help=SUPPRESS` arguments that warn in the dispatcher. All of these
-are removed in 0.8.
+without `help=`, so argparse leaves it out of the command list in `ym --help`
+(`test_cli.py` checks this on every CI Python; checked by hand on 3.15). Its `set_defaults(deprecated=(OLD, NEW), **dest)` sets the new command's
+namespace keys (they override the `command=OLD` the subparsers action writes first).
+`main()` prints `` warning: `ym OLD` is deprecated and will be removed in 0.8; use `ym NEW` ``
+on stderr and dispatches as the new command. Deprecated options (`ym core --version`,
+`ym release --promote/--list`) are `help=SUPPRESS` arguments that warn in the dispatcher.
+All of these go in 0.8 (`cli.REMOVED_IN`).
 
 | Before 0.7 | 0.7 |
 |---|---|
@@ -549,9 +611,13 @@ are removed in 0.8.
 | `ym sync [--plugin NAME ...]` | `ym plugin sync [NAME ...]` |
 | `ym core --version V` | `ym core V` |
 | `ym check [--json]` | `ym update --check [--json]` |
-| `ym status` | `ym doctor --local` (+ `ym plugin list`; the alias runs both) |
+| `ym status` | `ym doctor --local` (+ `ym plugin list`; the alias runs both and exits 1 on drift) |
 | `ym template-update` | `ym template update` |
 | `ym release --promote` / `--list` | `ym release promote` / `ym release list` |
+
+Internal renames: `sshsetup.py` → `login.py` (`ssh_setup` → `login`, `check_ssh` →
+`check_login`, `SshCheck` → `LoginCheck`); `report.status()` removed (doctor covers it);
+`targets.py` is new; the wizard's `SetupState` → `InitState`.
 
 ### 14.2 Groups
 
@@ -564,35 +630,63 @@ are removed in 0.8.
 | health | `doctor [TARGET] [--local]` |
 | GitHub | `repo create`, `ci setup\|status` |
 
+The README's command reference uses the same groups and has a "Renamed in 0.7" table.
+
 ### 14.3 New behavior
 
 - `target add NAME [--type rsync|sftp] [--host] [--user] [--port] [--path] [--php] [--url]
-  [--accept]`: appends `[deploy.targets.NAME]` (quoted key when NAME has a `.`) to site.toml
-  as text, like `plugin add`; re-parses and restores the file on any error. On a terminal it
-  asks for missing values (sftp skips the PHP question); otherwise `--path` is required, and
-  `--host` for sftp. Writes `type`, `path`, `accept` always and other keys only when not the
-  default. `prod` defaults to `accept = "release"` (as the template does), others to `"any"`.
-  `--php` on sftp warns and is dropped. `protect` defaults to `[".well-known/"]` like the
-  template (`--protect`, repeatable, replaces it).
+  [--accept any|release] [--protect PATH ...]` (`targets.py`): appends
+  `[deploy.targets.NAME]` (quoted key when NAME has a `.`) to site.toml as text, like
+  `plugin add`; re-parses and restores the file on any error. On a terminal it asks for
+  missing values (sftp skips the PHP question); otherwise `--path` is required, and `--host`
+  for sftp. Writes `type`, `path`, `protect`, `accept` always and other keys only when not
+  the default. `prod` defaults to `accept = "release"` (as the template does), others to
+  `"any"`. `protect` defaults to `[".well-known/"]` like the template, so rsync `--delete`
+  can't remove ACME challenge files. `--php` on sftp warns and is dropped. Prints the block
+  and the next steps (`target login`, `target config`, `deploy --dry-run`).
 - `target list [--json]`: name, type, location (`user@host:path`, `sftp://…`, `local:…`),
   url, accept, ci.
-- `target login` for sftp targets: when key login fails but `YM_<TARGET>_PASSWORD` logs in,
-  report that and only offer a key (declining is success).
-- `update --check` = old `check` (read-only, exit 10 / 1 / 0); refuses the other update
-  options. `update --force` passes `--force` to the core and plugin steps.
-- `doctor --local`: tools + site repo only (no network); prints the site name, the locked
-  core commit, and one line per drift problem. Rejects `TARGET --local`.
-- `init`: progress files are `.git/ym-init.json` and `$XDG_STATE_HOME/yourls-manager/
-  init.json`; the pre-0.7 `ym-setup.json` / `setup.json` are read and replaced on save. The
-  wizard offers `target add prod` when site.toml has no prod target.
+- `target login` for sftp targets accepts a working password login (§10.4); without a
+  terminal it checks with the password allowed.
+- `update --check` = the old `check`; `update --force` passes `--force` to the core and plugin
+  steps (§11.2).
+- `doctor --local` (§11.3); the doctor report also gained the site line, the locked core
+  commit, and one line per drift problem.
+- `init`: progress files renamed to `ym-init.json` / `init.json`; the pre-0.7
+  `ym-setup.json` / `setup.json` are still read (so an unfinished `ym setup` resumes) and are
+  replaced on the next save. The wizard offers `target add prod` when site.toml has no prod
+  target, and suggests `ym update --commit` after adopting.
 - `release` keeps tagging without an action; `promote` and `list` are optional subcommands.
   `--push`, `--dry-run`, `-m` exist on both levels, with SUPPRESSed defaults in the
   subparser so `ym release --push promote` keeps `--push`.
 - `deploy --help` groups options: all targets / rsync (`--skip-backup`) / sftp
-  (`--verify-remote`).
+  (`--verify-remote`), and summarizes both flows.
+- Every hint and next-step message uses the new names (doctor, ci, adopt, new, deploy
+  preflight, transport errors, the wizard). The last two stragglers (rsync preflight's
+  "copy config.example.php by hand", `ym new`'s "uncomment the prod target") were fixed
+  after the v0.7.0 tag and are in `[Unreleased]`.
 
-### 14.4 Template
+### 14.4 Commits
 
-The site template pins `manager_version`, so it moves to the new names only after v0.7.0 is
-tagged: `check-updates.yml` uses `ym update --check` and `ym update --force`; docs and
-comments use the new names; "uncomment the prod target" becomes `ym target add prod`.
+yourls-manager: alias mechanism + `plugins`; `target login/config`; `target add/list`;
+`plugin sync` and `core VERSION`; `update --check` and `doctor --local`; `init`;
+`template update` and `release promote/list`; deploy option groups; docs; `protect` default
+for `target add`; `--help` summaries; release 0.7.0; the two hint fixes. Tests:
+`tests/test_cli.py` (every alias parses as its new command, is hidden from `--help`, and
+warns; release parsing), `tests/test_targets.py`, and the existing suites moved to the new
+names.
+
+### 14.5 Template (v0.6.0)
+
+The template pins `manager_version`, so it moved to the new names only after v0.7.0 was
+tagged: new sites pin `v0.7.0`; `check-updates.yml` runs `ym update --check` and then one
+`ym update --force` (instead of `ym core --version latest` + `ym sync --update --force`); the
+README, site.toml comments, `config.example.php` and copier messages use the new names; with
+no deploy host, they point at `ym target add prod` (the commented prod block stays as an
+example). Existing sites keep working on their pinned version and pick this up with
+`ym template update --manager-version v0.7.0`.
+
+### 14.6 Next
+
+- 0.8: remove the deprecated spellings (`_deprecated` calls, the hidden options, and the
+  legacy wizard state file names).
