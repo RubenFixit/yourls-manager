@@ -15,7 +15,7 @@ rsync deploys dump the database to `backup_dir` before they change anything. See
 
 ```sh
 ym template update                           # pull the latest yourls-site-template changes
-ym template update --manager-version v0.8.0  # also bump the yourls-manager pin in pyproject.toml
+ym template update --manager-version v0.8.1  # also bump the yourls-manager pin in pyproject.toml
 ym template update --data ci_provider=gitlab # change an earlier template answer
 ```
 

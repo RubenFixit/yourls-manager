@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-30
+
+### Fixed
+
+- `docs/cli.md` came out differently on Python 3.13 and later (argparse writes `-m, --message MESSAGE` there, `-m MESSAGE, --message MESSAGE` before), so its freshness test failed in CI. The generator now formats option names itself, and turns off Python 3.14's colored help.
+
 ## [0.8.0] - 2026-10-29
 
 Release artifacts for sites that ym doesn't deploy, and the template's CI provider choice (template v0.7.0). The 0.7 deprecated spellings are gone.
@@ -219,7 +225,8 @@ Onboarding commands that work from the globally installed tool, before a site re
 - `ym-helper.php` server-side helper (`info`, `dump`, `upgrade`, `plugins`, `version`) with a JSON-on-stdout contract.
 - Redirect verification from `tests/redirects.toml` plus a JSON health check.
 
-[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/RubenFixit/yourls-manager/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.5.0...v0.6.0
