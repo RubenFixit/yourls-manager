@@ -47,7 +47,7 @@ The entries are grouped by how they ship:
 |---|---|
 | [Run the site's pinned ym](#run-the-sites-pinned-ym) | Next |
 | [Report newer ym and template releases](#report-newer-ym-and-template-releases) | Proposed; with or after the pinned ym |
-| [Publish to PyPI](#publish-to-pypi) | Next |
+| [Publish to PyPI](#publish-to-pypi) | After the pinned ym |
 | [Adopt: skip leftovers from older YOURLS releases](#adopt-skip-leftovers-from-older-yourls-releases) | Proposed; found adopting redirect-services |
 | [Adopt: manage plugins with a known upstream](#adopt-manage-plugins-with-a-known-upstream) | Proposed; found adopting redirect-services |
 | [Deploy history: `ym release list --target`](#deploy-history-ym-release-list---target) | Proposed |
