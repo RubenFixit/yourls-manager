@@ -340,11 +340,12 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[common],
         help="read-only health report: tools, site repo, targets (exit 1 on failures)",
         description=(
-            "Check local tools, site.toml, the lock and drift, uncommitted and unpushed"
-            " changes, and per target: login, PHP CLI (rsync), server config, https url,"
-            " install/upgrade state, and the deployed commit vs HEAD. With [artifact]"
-            " enabled = true, also that a CI job publishes the artifacts. Changes nothing."
-            " --local skips the targets (offline) and exits 1 on drift."
+            "Check local tools, site.toml, the lock and drift, vendored files that Git"
+            " ignores, uncommitted and unpushed changes, and per target: login, PHP CLI"
+            " (rsync), server config, https url, install/upgrade state, and the deployed"
+            " commit vs HEAD. With [artifact] enabled = true, also that a CI job publishes"
+            " the artifacts. Changes nothing. --local skips the targets (offline) and exits"
+            " 1 on drift."
         ),
     )
     p.add_argument("target", nargs="?", help="check only this target (default: all)")

@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- `ym core`, `ym plugin sync` and `ym doctor` (also `--local`) warn about vendored files under `yourls/` that Git ignores and doesn't track, naming the `.gitignore` rule (`source:line: pattern`) for each. Such files are on disk but never committed, so a clean checkout (CI) fails the drift check: the template's unanchored `*.sql` rule did this to a plugin's SQL file before template v0.8.0. `ym core` checks core, `ym plugin sync` the plugins it vendored; tracked files are never reported.
+
 ## [0.9.0] - 2026-10-30
 
 GitLab support for the repo and CI commands: glab for the login, python-gitlab for the API. Verified on gitlab.com with a real artifact-only site (check-updates setup, including the project access token).

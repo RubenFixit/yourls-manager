@@ -237,6 +237,55 @@ def test_doctor(site, tmp_path, monkeypatch, capsys):
     assert main([*S, "doctor", "nope"]) == 2
 
 
+def test_ignored_vendored_files(tmp_path, fake_core, upstream, capsys):
+    """core, plugin sync and doctor warn about vendored files Git won't commit."""
+    plug = upstream("p")
+    plug.commit({"plugin.php": "<?php\n/*\nPlugin Name: P\n*/\n", "install.sql": "-- sql\n"})
+    site = tmp_path / "site"
+    write_files(
+        site,
+        {
+            "site.toml": f"""
+                [site]
+                name = "T"
+                slug = "t"
+                url = "https://go.example.com"
+                [core]
+                repo = "{fake_core.url}"
+                version = "1.0.0"
+                """,
+            ".gitignore": "dist/\n*.sql\nadmin/\n",
+        },
+    )
+    git(site, "init", "-q", "-b", "main")
+    S = ["--site-dir", str(site)]
+    assert main([*S, "core"]) == 0
+    err = capsys.readouterr().err
+    assert "1 vendored file(s) are ignored by Git" in err
+    assert "yourls/admin/index.php (ignored by .gitignore:3: admin/)" in err
+    assert "install.sql" not in err
+
+    toml = site / "site.toml"
+    toml.write_text(toml.read_text() + f'\n[[plugins]]\nname = "p"\nrepo = "{plug.url}"\n')
+    assert main([*S, "plugin", "sync"]) == 0
+    err = capsys.readouterr().err
+    assert "yourls/user/plugins/p/install.sql (ignored by .gitignore:2: *.sql)" in err
+    assert "admin/index.php" not in err  # plugin sync only checks the plugins it wrote
+
+    assert main([*S, "doctor", "--local"]) == 0
+    out = capsys.readouterr().out
+    assert "warn  gitignore: 2 vendored file(s) are ignored by Git" in out
+    assert "- yourls/admin/index.php (ignored by .gitignore:3: admin/)" in out
+    assert "- yourls/user/plugins/p/install.sql (ignored by .gitignore:2: *.sql)" in out
+
+    # once tracked, Git keeps the files whatever the ignore rules say
+    git(site, "add", "-A")
+    git(site, "add", "-f", "yourls")
+    git(site, "commit", "-q", "-m", "init")
+    assert main([*S, "doctor", "--local"]) == 0
+    assert "ok    gitignore: no vendored file is ignored" in capsys.readouterr().out
+
+
 def test_doctor_outside_site(tmp_path, capsys):
     assert main(["--site-dir", str(tmp_path), "doctor"]) == 1
     assert "FAIL  site.toml" in capsys.readouterr().out

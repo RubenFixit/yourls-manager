@@ -9,11 +9,13 @@ from . import gitsrc
 from .config import SiteConfig, set_core_version
 from .drift import (
     PLUGINS_REL,
+    core_filter,
     core_hash,
     core_pathspecs,
     dirty_guard,
     managed_names,
     plugin_dir,
+    warn_ignored,
 )
 from .lockfile import CoreLock, load_lock, write_lock
 from .util import YMError, console, iso_utc
@@ -88,4 +90,5 @@ def update_core(
     if set_core_version(cfg.site_file, tag):
         console.info(f"site.toml: [core].version = {tag!r}")
     console.info(f"core: vendored YOURLS {upstream_version} ({tag} @ {commit[:10]})")
+    warn_ignored(cfg, [cfg.vendor_dir], core_filter(cfg, lock))
     return lock.core

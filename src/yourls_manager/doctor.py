@@ -146,6 +146,7 @@ def check_site(rep: Report, start: Path | None) -> SiteConfig | None:
                 "commit before deploying (deploy refuses a dirty tree)")  # fmt: skip
     else:
         rep.add(OK, "working tree", "clean")
+    _ignored_check(rep, cfg)
     code, head = _git(cfg.root, "rev-parse", "--short", "HEAD")
     if code != 0:
         rep.add(WARN, "HEAD", "no commits yet")
@@ -160,6 +161,20 @@ def check_site(rep: Report, start: Path | None) -> SiteConfig | None:
         else:
             rep.add(WARN, "HEAD pushed", f"{head} is not on any remote branch", "git push")
     return cfg
+
+
+def _ignored_check(rep: Report, cfg: SiteConfig) -> None:
+    from .drift import IGNORED_HINT, describe_ignored, ignored_files
+
+    ignored = ignored_files(cfg, [cfg.vendor_dir])
+    if not ignored:
+        rep.add(OK, "gitignore", "no vendored file is ignored")
+        return
+    rep.add(WARN, "gitignore",
+            f"{len(ignored)} vendored file(s) are ignored by Git; {IGNORED_HINT}:")  # fmt: skip
+    for line in describe_ignored(ignored):
+        console.info(f"          - {line}")
+    console.info("        -> add a negation such as `!/yourls/**` to .gitignore")
 
 
 CI_FILES = {"github": ".github/workflows/*.y*ml", "gitlab": ".gitlab-ci.yml"}

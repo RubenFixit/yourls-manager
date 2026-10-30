@@ -17,15 +17,8 @@ The entries are grouped by how they ship:
 
 | Item | Kind |
 |---|---|
-| [Warn about vendored files that Git ignores](#warn-about-vendored-files-that-git-ignores) | Bug guard |
 | [`ym plugin remove` leaves comments behind](#ym-plugin-remove-leaves-comments-behind) | Bug |
 | [`ym plugin add` appends at the end of site.toml](#ym-plugin-add-appends-at-the-end-of-sitetoml) | Bug |
-
-### Warn about vendored files that Git ignores
-
-**Problem.** The template's unanchored `*.sql` rule kept a plugin's SQL file (fuzzy-keywords) out of Git. `ym doctor` passed locally because the file was on disk; only CI's clean checkout showed the drift from the lock. Template v0.8.0 fixed the rule (`!/yourls/**`), but sites with their own ignore rules can hit it again.
-
-**Fix.** `ym core`, `ym plugin sync` and `ym doctor --local` run `git check-ignore --stdin` over the vendored files and warn about any match ("ignored by .gitignore:NN; it won't be committed, and clean checkouts will fail the drift check").
 
 ### `ym plugin remove` leaves comments behind
 
@@ -191,7 +184,7 @@ A new type needs its `site.toml` keys and validation, a transport, the deploy fl
 
 ### Template GitLab CI on real GitLab
 
-Template v0.8.0 (GitLab `check` job, schema checks, a check-updates job that leaves an up-to-date branch alone) and ym 0.9.0 (`ym repo create`, `ym ci setup|status` on GitLab) were verified on gitlab.com with sms-yourls, the artifact-only site split out of redirect-services: `check` on a branch push (it caught the `.gitignore` bug in [Warn about vendored files that Git ignores](#warn-about-vendored-files-that-git-ignores)), `publish` on an rc and a final tag (the CI archive is byte-identical to a local `ym artifact build`), and `ym ci setup` creating the check-updates schedule and a project access token.
+Template v0.8.0 (GitLab `check` job, schema checks, a check-updates job that leaves an up-to-date branch alone) and ym 0.9.0 (`ym repo create`, `ym ci setup|status` on GitLab) were verified on gitlab.com with sms-yourls, the artifact-only site split out of redirect-services: `check` on a branch push (it caught the `.gitignore` bug that ym now warns about), `publish` on an rc and a final tag (the CI archive is byte-identical to a local `ym artifact build`), and `ym ci setup` creating the check-updates schedule and a project access token.
 
 Not run yet:
 - `check-updates` from the schedule, twice: the first run opens a merge request, the second pushes nothing.

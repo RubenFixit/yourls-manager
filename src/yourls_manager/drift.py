@@ -7,8 +7,8 @@ from pathlib import Path
 
 from .config import SiteConfig
 from .lockfile import Lock
-from .util import UsageError, console, run
-from .vendor import PathFilter, prefix_filter, tree_sha256
+from .util import UsageError, YMError, console, run
+from .vendor import PathFilter, iter_files, prefix_filter, tree_sha256
 
 PLUGINS_REL = "user/plugins"
 
@@ -92,6 +92,70 @@ def git_changes(root: Path, *pathspecs: str) -> list[str] | None:
     if proc.returncode != 0:
         return None
     return [ln for ln in proc.stdout.decode(errors="replace").splitlines() if ln.strip()]
+
+
+@dataclass
+class Ignored:
+    """A vendored file that Git ignores and doesn't track; ``rule`` is ``source:line``."""
+
+    path: str
+    rule: str
+    pattern: str
+
+
+def ignored_files(cfg: SiteConfig, dirs: list[Path], skip: PathFilter | None = None
+                  ) -> list[Ignored]:  # fmt: skip
+    """Files under ``dirs`` (``skip`` applies to paths relative to each dir) that Git
+    would leave out of a commit. Empty outside a git repository or without git."""
+    paths: list[str] = []
+    for d in dirs:
+        if d.is_dir():
+            base = d.relative_to(cfg.root).as_posix()
+            files = iter_files(d, skip) if skip else iter_files(d)
+            paths += [f"{base}/{rel}" for rel, _ in files]
+    if not paths:
+        return []
+    try:
+        probe = run(["git", "rev-parse", "--is-inside-work-tree"], cwd=cfg.root, check=False)
+        if probe.returncode != 0:
+            return []
+        # Tracked files are never reported: Git keeps them whatever the ignore rules say.
+        proc = run(["git", "check-ignore", "--stdin", "-z", "-v"], cwd=cfg.root,
+                   input="\0".join(paths).encode() + b"\0", check=False)  # fmt: skip
+    except YMError:
+        return []
+    if proc.returncode not in (0, 1):
+        return []
+    fields = proc.stdout.decode(errors="replace").split("\0")
+    return [
+        Ignored(path=fields[i + 3], rule=f"{fields[i]}:{fields[i + 1]}", pattern=fields[i + 2])
+        for i in range(0, len(fields) - 3, 4)
+    ]
+
+
+IGNORED_HINT = "it won't be committed, and clean checkouts (CI) will fail the drift check"
+
+
+def describe_ignored(ignored: list[Ignored], limit: int = 5) -> list[str]:
+    """One line per file, grouped by rule and capped at ``limit`` per rule."""
+    by_rule: dict[tuple[str, str], list[str]] = {}
+    for item in ignored:
+        by_rule.setdefault((item.rule, item.pattern), []).append(item.path)
+    lines: list[str] = []
+    for (rule, pattern), paths in by_rule.items():
+        lines += [f"{p} (ignored by {rule}: {pattern})" for p in paths[:limit]]
+        if len(paths) > limit:
+            lines.append(f"... and {len(paths) - limit} more ignored by {rule}")
+    return lines
+
+
+def warn_ignored(cfg: SiteConfig, dirs: list[Path], skip: PathFilter | None = None) -> None:
+    ignored = ignored_files(cfg, dirs, skip)
+    if not ignored:
+        return
+    console.warn(f"{len(ignored)} vendored file(s) are ignored by Git; {IGNORED_HINT}:\n  "
+                 + "\n  ".join(describe_ignored(ignored))
+                 + "\n  add a negation such as `!/yourls/**` to .gitignore")  # fmt: skip
 
 
 def dirty_guard(cfg: SiteConfig, force: bool, pathspecs: list[str] | None = None) -> None:

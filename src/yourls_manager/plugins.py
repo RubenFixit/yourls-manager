@@ -7,7 +7,7 @@ from pathlib import Path
 
 from . import gitsrc
 from .config import PluginSpec, SiteConfig, UsageError
-from .drift import dirty_guard, plugin_dir, plugin_pathspecs
+from .drift import dirty_guard, plugin_dir, plugin_pathspecs, warn_ignored
 from .lockfile import PluginLock, load_lock, write_lock
 from .util import YMError, console, iso_utc
 from .vendor import atomic_replace_dir, copy_tree, rmtree, staging_dir, tree_sha256
@@ -130,4 +130,5 @@ def sync_plugins(
     lock.plugins = dict(sorted(lock.plugins.items()))
     write_lock(cfg.lock_file, lock)
     console.info(f"plugins: {len(new_entries)} vendored, {len(removals)} removed")
+    warn_ignored(cfg, [plugin_dir(cfg, name) for name in new_entries])
     return result
