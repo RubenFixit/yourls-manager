@@ -208,7 +208,25 @@ def test_ssh_setup_installs_key_over_sftp(tmp_path, sftp_only, ssh_home, monkeyp
     assert ak.read_text() == pub + "\n"
     capsys.readouterr()
     assert main(["--site-dir", str(site), "target", "login", "prod"]) == 0
-    assert "key authentication works" in capsys.readouterr().out
+    assert "login works" in capsys.readouterr().out
+
+
+@pytest.mark.sftp
+@needs_sshd
+def test_remove_old_ci_keys_over_sftp(tmp_path, sftp_only, ssh_home, monkeypatch):
+    from yourls_manager.ci import remove_old_keys
+
+    monkeypatch.setenv("YM_PROD_PASSWORD", sftp_only.password)
+    spec = load_site(sc_site(tmp_path, sftp_only)).target("prod")
+    with SftpTransport.for_target(spec, interactive=False) as t:
+        for line in ("ssh-ed25519 AAAA1 me@laptop", "ssh-ed25519 AAAA2 ym-ci-s-production-1",
+                     "ssh-ed25519 AAAA3 ym-ci-s-production-2"):  # fmt: skip
+            install_key_sftp(t, line)
+    assert remove_old_keys(spec, "ym-ci-s-production-", "ym-ci-s-production-2") == 1
+    ak = sftp_only.real(".ssh/authorized_keys")
+    assert ak.read_text() == "ssh-ed25519 AAAA1 me@laptop\nssh-ed25519 AAAA3 ym-ci-s-production-2\n"
+    assert stat.S_IMODE(ak.stat().st_mode) == 0o600
+    assert remove_old_keys(spec, "ym-ci-s-production-", "ym-ci-s-production-2") == 0
 
 
 @pytest.mark.sftp

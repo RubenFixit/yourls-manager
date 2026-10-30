@@ -185,7 +185,9 @@ def test_sidecars(site, tmp_path):
     meta = json.loads(text)
     lock = json.loads((site / "yourls.lock.json").read_text())
     commit = git(site, "rev-parse", "HEAD")
-    committed = git(site, "show", "-s", "--format=%cd", "--date=format-local:%Y-%m-%dT%H:%M:%SZ")
+    committed = time.strftime(  # UTC, whatever the machine's time zone
+        "%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(git(site, "show", "-s", "--format=%ct")))
+    )
     assert meta == {
         "schema": 1,
         "site": "t",

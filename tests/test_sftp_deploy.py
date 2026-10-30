@@ -240,7 +240,7 @@ def test_deploy_flow(tmp_path, upstream, account, ssh_home, client_key, state_se
     assert "verify (skipped: upgrade pending)" in out and "ym verify prod" in out
 
     # ---- plugins / options that don't apply
-    assert main([*S, "plugins", "prod"]) == 2
+    assert main([*S, "plugin", "apply", "prod"]) == 2
     assert "admin/plugins.php" in capsys.readouterr().err
 
 
