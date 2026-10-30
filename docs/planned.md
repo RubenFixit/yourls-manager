@@ -17,23 +17,9 @@ The entries are grouped by how they ship:
 
 | Item | Kind |
 |---|---|
-| [Warn when the running ym is older than the site's pin](#warn-when-the-running-ym-is-older-than-the-sites-pin) | Usability |
 | [Warn about vendored files that Git ignores](#warn-about-vendored-files-that-git-ignores) | Bug guard |
 | [`ym plugin remove` leaves comments behind](#ym-plugin-remove-leaves-comments-behind) | Bug |
 | [`ym plugin add` appends at the end of site.toml](#ym-plugin-add-appends-at-the-end-of-sitetoml) | Bug |
-
-### Warn when the running ym is older than the site's pin
-
-**Problem.** A globally installed `ym` (`uv tool install ...`) can be much older than the version a site pins in its `pyproject.toml`. Commands added since then fail with an argparse error that doesn't say why: an old global ym in sms-yourls answered `ym template update` with `invalid choice: 'template'`, although the site pins a version that has it.
-
-**Fix.**
-- In a site repo, read the pinned version from `pyproject.toml` (the `tag` of `yourls-manager` in `[tool.uv.sources]`; later the `==X.Y.Z` requirement, see [Publish to PyPI](#publish-to-pypi)).
-- When the running ym is older, warn once on stderr before the command runs: this is ym A, the site pins B; run `uv run ym ...` in the site, or update the global install (`uv tool install --force git+https://github.com/RubenFixit/yourls-manager@vB`).
-- When argparse rejects the command and the pin is newer, add the same hint to the error.
-- Cheap and offline: no network, no subprocess; silent outside a site repo or when the pin can't be read.
-
-Open questions:
-- Running a newer ym than the pin: say nothing, or a note on commands that write site files (CI runs the pinned version)?
 
 ### Warn about vendored files that Git ignores
 
@@ -59,6 +45,8 @@ Open questions:
 
 | Item | Status |
 |---|---|
+| [Run the site's pinned ym](#run-the-sites-pinned-ym) | Next |
+| [Report newer ym and template releases](#report-newer-ym-and-template-releases) | Proposed; with or after the pinned ym |
 | [Publish to PyPI](#publish-to-pypi) | Next |
 | [Adopt: skip leftovers from older YOURLS releases](#adopt-skip-leftovers-from-older-yourls-releases) | Proposed; found adopting redirect-services |
 | [Adopt: manage plugins with a known upstream](#adopt-manage-plugins-with-a-known-upstream) | Proposed; found adopting redirect-services |
@@ -67,6 +55,35 @@ Open questions:
 | [CI follow-ups](#ci-follow-ups) | Proposed, two small items |
 | [Server-side plugin state](#server-side-plugin-state) | Undecided: own companion plugin or existing plugin |
 | [More target types](#more-target-types) | Open: add a type when a site needs it |
+
+### Run the site's pinned ym
+
+**Problem.** A site pins ym in `pyproject.toml`, and CI runs that version (`uv run ym`), but a globally installed `ym` ignores the pin. The template and ym are coupled in both directions, so any mismatch shows up:
+- **Global ym older than the pin.** Commands the template documents fail with an unhelpful argparse error: an old global ym in sms-yourls answered `ym template update` with `invalid choice: 'template'`. Newer `site.toml` keys are warned about and ignored, so their settings silently do nothing.
+- **Global ym newer than the pin.** It writes files that CI then reads with the pinned ym: `site.toml` keys the pin ignores, `yourls.lock.json` (a `lock_version` bump fails CI), and vendored files that may differ from the pin's build, failing CI's drift check or breaking byte-identical artifacts. Local and CI deploys to the same target come from different versions.
+- **Template ahead of the pin.** `copier update` reuses the earlier `manager_version` answer, so a site can take a template release that documents commands its pinned ym doesn't have.
+
+**Proposal.**
+- In a site repo, read the pinned version from `pyproject.toml` (the `tag` of `yourls-manager` in `[tool.uv.sources]`; later the `==X.Y.Z` requirement, see [Publish to PyPI](#publish-to-pypi)). When it differs from the running ym, re-run the command as `uv run --locked ym ...` in the site (same arguments and exit code; exec on POSIX, a child process on Windows), so the pin always decides what runs. `--locked` matches CI and never rewrites `uv.lock`.
+- The first run in a fresh clone syncs the environment (network); later runs work offline from uv's cache. When uv fails (offline with an empty cache, `uv.lock` out of date), its error is shown, followed by a hint naming `YM_NO_DELEGATE=1`. Read-only commands get no exception: that would be another rule to remember, and would silently run a different version.
+- No hand-off outside a site repo, when the pin can't be read, when already running from the site's environment, and for `ym new` and `ym template update --manager-version` (which moves the pin).
+- Opt-out: `YM_NO_DELEGATE=1` runs the global ym as is (testing an unreleased ym against a real site). It prints one line before commands that write site files or deploy: "this is ym A, the site pins B; CI runs B".
+- Missing `uv`: fall back to the old behavior with a warning that names `uv run ym`.
+- Global installs from before this can't hand off, so the same release adds a hint for argparse errors: when the pin is newer than the running ym, say so and suggest `uv run ym ...` or `uv tool upgrade`.
+- CI: `ym doctor` treats unknown `site.toml` keys as errors when `CI` is set, so a key the pinned ym doesn't know fails loudly.
+- Template: the `manager_version` validator rejects tags older than the version that template release was written for, so `copier update` can't keep an older pin.
+
+### Report newer ym and template releases
+
+**Problem.** `ym update --check` and the template's check-updates job look only at YOURLS core and plugins. Nothing reports a newer ym than the site's pin or a newer template than the one it was generated from: Dependabot can't bump the git-tag pin, and template updates are noticed by hand.
+
+**Proposal.**
+- `ym update --check` also reports a newer ym tag than the pin (`ym template update --manager-version vX.Y.Z`) and a newer template tag than `_commit` in `.copier-answers.yml` (`ym template update`; also say which ym that template release pins).
+- Source: `git ls-remote --tags` on the ym repo and on the template's `_src_path`, like plugin checks: no token, works on GitHub and GitLab. After [Publish to PyPI](#publish-to-pypi), ym's version can come from PyPI, and Dependabot bumps the pin as well.
+- Release candidates are ignored unless `--pre` is given. A site pinned to an rc still sees the final release, which is newer.
+- Exit code 10 keeps meaning "`ym update` would change something". `ym update` doesn't apply ym or template updates, so they alone don't exit 10; they are printed and included in `--json`. Existing check-updates workflows keep working unchanged.
+- check-updates (GitHub and GitLab) reads the `--json` output and reports them without applying them, since a template update can conflict: list them in the update PR / MR body, or open an issue when core and plugins are up to date (one issue, updated by later runs rather than reopened weekly).
+- No check on ordinary commands: that would add a network call to every run and to CI logs, and once ym runs the site's pinned version the global install's own version barely matters.
 
 ### Publish to PyPI
 
