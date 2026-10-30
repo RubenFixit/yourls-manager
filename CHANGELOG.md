@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-30
+
+Guards and fixes for site files: a warning for vendored files Git won't commit, and `ym plugin add` / `remove` keep the plugin list in `site.toml` together.
+
 ### Added
 
 - `ym core`, `ym plugin sync` and `ym doctor` (also `--local`) warn about vendored files under `yourls/` that Git ignores and doesn't track, naming the `.gitignore` rule (`source:line: pattern`) for each. Such files are on disk but never committed, so a clean checkout (CI) fails the drift check: the template's unanchored `*.sql` rule did this to a plugin's SQL file before template v0.8.0. `ym core` checks core, `ym plugin sync` the plugins it vendored; tracked files are never reported.
@@ -254,7 +258,8 @@ Onboarding commands that work from the globally installed tool, before a site re
 - `ym-helper.php` server-side helper (`info`, `dump`, `upgrade`, `plugins`, `version`) with a JSON-on-stdout contract.
 - Redirect verification from `tests/redirects.toml` plus a JSON health check.
 
-[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/RubenFixit/yourls-manager/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/RubenFixit/yourls-manager/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.7.0...v0.8.0
