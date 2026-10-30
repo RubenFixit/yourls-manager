@@ -211,7 +211,7 @@ def build_parser() -> argparse.ArgumentParser:
             " (GitHub, GitLab, Codeberg, Bitbucket; /tree/<ref>/<dir> sets ref and path)."
             " plugin.php is looked for at the top of the repo, else one directory down"
             " (several: asks on a terminal, else needs --path). Shows the plugin header,"
-            " appends a [[plugins]] block to site.toml"
+            " adds a [[plugins]] block to site.toml after the last one"
             " and vendors it. Refuses duplicates and directory names used by core or"
             " overlay/. Catalog entries that link to a web page need the repo URL instead."
         ),

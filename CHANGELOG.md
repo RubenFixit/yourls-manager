@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 - `ym core`, `ym plugin sync` and `ym doctor` (also `--local`) warn about vendored files under `yourls/` that Git ignores and doesn't track, naming the `.gitignore` rule (`source:line: pattern`) for each. Such files are on disk but never committed, so a clean checkout (CI) fails the drift check: the template's unanchored `*.sql` rule did this to a plugin's SQL file before template v0.8.0. `ym core` checks core, `ym plugin sync` the plugins it vendored; tracked files are never reported.
 
+### Fixed
+
+- `ym plugin add` inserts the new `[[plugins]]` block after the last existing one (its keys and the comments directly under it) instead of at the end of `site.toml`, after `[build]`, `[artifact]` and the targets. Commented-out examples and the comments above the next table stay where they are. `ym adopt` uses the same placement, so its entries now go before the template's commented-out examples rather than after them.
+- `ym plugin remove` also deletes the comment lines directly above the block when they name the plugin or `ym adopt` wrote them ("Adopted by `ym adopt`…", "Plugin URI…"). Section comments that don't name the plugin stay, separated from what follows by a blank line.
+
 ## [0.9.0] - 2026-10-30
 
 GitLab support for the repo and CI commands: glab for the login, python-gitlab for the API. Verified on gitlab.com with a real artifact-only site (check-updates setup, including the project access token).

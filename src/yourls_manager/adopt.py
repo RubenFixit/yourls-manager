@@ -17,7 +17,6 @@ import re
 import shutil
 import sys
 import tempfile
-import tomllib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,6 +31,7 @@ from .config import (
     load_site,
 )
 from .core import read_yourls_version
+from .plugincmd import insert_plugin_blocks
 from .util import UsageError, YMError, console, iso_utc, run
 from .vendor import (
     copy_tree,
@@ -59,7 +59,6 @@ REPORT_FILE = "REPORT.md"
 AskActive = Callable[[str], bool]
 
 _PLUGIN_URI_RE = re.compile(r"^[ \t/*#]*Plugin URI:\s*(\S.*?)\s*$", re.MULTILINE | re.IGNORECASE)
-_TABLE_HEADER_RE = re.compile(r"^\s*\[\[?\s*([^\[\]]+?)\s*\]\]?\s*(#.*)?$")
 
 
 # --------------------------------------------------------------------------- data
@@ -542,42 +541,6 @@ def plugin_block(d: PluginDecision) -> str:
     return "\n".join(lines) + "\n"
 
 
-def append_plugin_blocks(site_file: Path, blocks: list[str]) -> None:
-    """Insert ``[[plugins]]`` blocks after the existing plugin entries, keeping comments."""
-    if not blocks:
-        return
-    text = site_file.read_text(encoding="utf-8")
-    before = tomllib.loads(text)
-    lines = text.splitlines(keepends=True)
-    if lines and not lines[-1].endswith("\n"):
-        lines[-1] += "\n"
-    last_plugins = None
-    for i, line in enumerate(lines):
-        m = _TABLE_HEADER_RE.match(line)
-        if m and line.lstrip().startswith("[[") and m[1] == "plugins":
-            last_plugins = i
-    insert_at = len(lines)
-    if last_plugins is not None:
-        for j in range(last_plugins + 1, len(lines)):
-            m = _TABLE_HEADER_RE.match(lines[j])
-            if m:
-                k = j
-                while k > last_plugins + 1 and lines[k - 1].lstrip().startswith("#"):
-                    k -= 1
-                insert_at = k
-                break
-    prev_blank = insert_at == 0 or lines[insert_at - 1].strip() == ""
-    chunk = ("" if prev_blank else "\n") + "\n".join(blocks)
-    if insert_at < len(lines):
-        chunk += "\n"  # blank line before the following table
-    new_text = "".join(lines[:insert_at]) + chunk + "".join(lines[insert_at:])
-    after = tomllib.loads(new_text)
-    want = len(before.get("plugins", [])) + len(blocks)
-    if len(after.get("plugins", [])) != want:  # pragma: no cover - defensive
-        raise YMError("internal error: could not add [[plugins]] entries to site.toml")
-    site_file.write_text(new_text, encoding="utf-8")
-
-
 # --------------------------------------------------------------------------- parity
 
 
@@ -853,7 +816,7 @@ def adopt(
             if d.add_entry:
                 blocks.append(plugin_block(d))
                 toml_added.append(d.name)
-        append_plugin_blocks(cfg.site_file, blocks)
+        insert_plugin_blocks(cfg.site_file, blocks)
         cfg = load_site(cfg.root)
 
         # ---- parity

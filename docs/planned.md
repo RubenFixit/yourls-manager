@@ -15,22 +15,7 @@ The entries are grouped by how they ship:
 
 ## Next patch release
 
-| Item | Kind |
-|---|---|
-| [`ym plugin remove` leaves comments behind](#ym-plugin-remove-leaves-comments-behind) | Bug |
-| [`ym plugin add` appends at the end of site.toml](#ym-plugin-add-appends-at-the-end-of-sitetoml) | Bug |
-
-### `ym plugin remove` leaves comments behind
-
-**Problem.** The comment lines `ym adopt` writes above a `[[plugins]]` block ("Adopted by `ym adopt`…", "Plugin URI…") stay in site.toml after `ym plugin remove` deletes the block.
-
-**Fix.** Also remove the comment lines directly above the block, up to the previous blank line, when they belong to it (they name the plugin or were written by adopt).
-
-### `ym plugin add` appends at the end of site.toml
-
-**Problem.** New `[[plugins]]` blocks land at the end of the file, after the `[build]`, `[artifact]` and deploy-target sections and their comments, so the plugin list ends up split in two.
-
-**Fix.** Insert the block after the last `[[plugins]]` block (and its trailing comments), falling back to the end of the file when there is none.
+Nothing open.
 
 ---
 

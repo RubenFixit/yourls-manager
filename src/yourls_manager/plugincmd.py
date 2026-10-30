@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
@@ -21,6 +22,57 @@ _ACTIVE = re.compile(r"^(\s*active\s*=\s*)(true|false)(.*)$")
 
 def _name_re(name: str) -> re.Pattern[str]:
     return re.compile(rf"""^\s*name\s*=\s*(["']){re.escape(name)}\1""")
+
+
+def _is_comment(line: str) -> bool:
+    return line.lstrip().startswith("#")
+
+
+def _mentions(line: str, name: str) -> bool:
+    return re.search(rf"(?<![\w.-]){re.escape(name)}(?![\w-])", line) is not None
+
+
+ADOPT_COMMENT = "# Adopted by `ym adopt`"
+
+
+def insert_plugin_blocks(site_file: Path, blocks: list[str]) -> None:
+    """Insert ``[[plugins]]`` blocks after the last existing one, else at the end of the file.
+
+    "After" means after the block's last key and any comment lines directly under it, so
+    a blank line followed by commented-out examples or the comments above the next table
+    stay where they are."""
+    if not blocks:
+        return
+    text = site_file.read_text(encoding="utf-8")
+    before = tomllib.loads(text)
+    lines = text.splitlines(keepends=True)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    insert_at = len(lines)
+    last = max((i for i, line in enumerate(lines) if _PLUGINS.match(line)), default=None)
+    if last is not None:
+        nxt = next((j for j in range(last + 1, len(lines)) if _TABLE.match(lines[j])), len(lines))
+        keys = [k for k in range(last + 1, nxt) if lines[k].strip() and not _is_comment(lines[k])]
+        end = (keys[-1] if keys else last) + 1
+        attached = end
+        while attached < nxt and _is_comment(lines[attached]):
+            attached += 1
+        if attached < nxt or nxt == len(lines):  # a comment run that runs into the next
+            end = attached  # table header belongs to that table
+        insert_at = end
+    chunk = "" if insert_at == 0 or not lines[insert_at - 1].strip() else "\n"
+    chunk += "\n".join(blocks)
+    if insert_at < len(lines) and lines[insert_at].strip():
+        chunk += "\n"  # blank line before what follows
+    new_text = "".join(lines[:insert_at]) + chunk + "".join(lines[insert_at:])
+    after = tomllib.loads(new_text)
+    old = before.get("plugins", [])
+    if (after.get("plugins", [])[: len(old)] != old
+            or len(after.get("plugins", [])) != len(old) + len(blocks)
+            or {k: v for k, v in after.items() if k != "plugins"}
+            != {k: v for k, v in before.items() if k != "plugins"}):  # fmt: skip
+        raise YMError("internal error: could not add [[plugins]] entries to site.toml")
+    site_file.write_text(new_text, encoding="utf-8")
 
 
 def set_active(cfg: SiteConfig, name: str, active: bool) -> bool:
@@ -163,8 +215,18 @@ def remove_plugin(cfg: SiteConfig, name: str, *, keep_files: bool = False) -> No
     if block is None:
         raise UsageError(f"could not find the [[plugins]] block for {name!r} in site.toml")
     start, end = block
-    while end > start + 1 and lines[end - 1].lstrip().startswith("#"):
+    while end > start + 1 and _is_comment(lines[end - 1]):
         end -= 1  # comment lines just before the next table belong to it
+    above = start
+    while above > 0 and _is_comment(lines[above - 1]):
+        above -= 1
+    # The comment run directly above goes too when it is about this plugin: it names
+    # it, or `ym adopt` wrote it. Section comments that don't name it stay.
+    if any(_mentions(x, name) or x.lstrip().startswith(ADOPT_COMMENT) for x in lines[above:start]):
+        start = above
+    elif above < start:
+        while end > start + 1 and not lines[end - 1].strip():
+            end -= 1  # keep a blank line between the kept comments and what follows
     del lines[start:end]
     path.write_text("".join(lines), encoding="utf-8")
     try:
@@ -324,13 +386,13 @@ def add_plugin(
         )
 
     original = cfg.site_file.read_text(encoding="utf-8")
-    block = f'\n[[plugins]]\nname   = "{name}"\nrepo   = "{repo}"\n'
+    block = f'[[plugins]]\nname   = "{name}"\nrepo   = "{repo}"\n'
     if ref != "HEAD":
         block += f'ref    = "{ref}"\n'
     if path != ".":
         block += f'path   = "{path}"\n'
     block += f"active = {'true' if active else 'false'}\n"
-    cfg.site_file.write_text(original.rstrip("\n") + "\n" + block, encoding="utf-8")
+    insert_plugin_blocks(cfg.site_file, [block])
     try:
         new_cfg = load_site(cfg.root)
         if new_cfg.plugin(name) is None:

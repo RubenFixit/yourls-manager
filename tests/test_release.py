@@ -249,6 +249,56 @@ def test_plugin_remove(site, upstream, capsys):
     assert main([*S, "plugin", "remove", "p"]) == 2
 
 
+def test_plugin_remove_comments(site, capsys):
+    """Comments above a block go with it when they name the plugin or adopt wrote them."""
+    S = ["--site-dir", str(site)]
+    toml = site / "site.toml"
+    base = toml.read_text()
+    toml.write_text(
+        base + "\n# Site logo (lives in overlay/user/plugins/site-branding).\n"
+        '[[plugins]]\nname = "site-branding"\n\n'
+        '# Plugins shipped with core.\n[[plugins]]\nname = "hyphens"\n\n'
+        "# Adopted by `ym adopt`: site-owned copy in overlay/user/plugins/custom/.\n"
+        "# Plugin URI: https://e/x\n#   (to get updates, switch to `repo = ...`)\n"
+        '[[plugins]]\nname = "custom"\n\n# Build output\n[build]\nout = "dist"\n'
+    )
+    for name in ("site-branding", "hyphens", "custom"):
+        assert main([*S, "plugin", "remove", name]) == 0
+    assert toml.read_text() == (
+        base + '\n# Plugins shipped with core.\n\n# Build output\n[build]\nout = "dist"\n'
+    )
+    capsys.readouterr()
+
+
+def test_plugin_add_after_last_plugin(site, upstream):
+    """New blocks go after the last [[plugins]] block, before commented-out examples."""
+    S = ["--site-dir", str(site)]
+    mono = upstream("mono")
+    mono.commit({"plug-b/plugin.php": "<?php // b\n", "plug-c/plugin.php": "<?php // c\n"})
+    toml = site / "site.toml"
+    toml.write_text(
+        toml.read_text() + '\n# Site logo\n[[plugins]]\nname = "site-branding"\n'
+        "# (overlay/user/plugins/site-branding)\n\n"
+        '# Example (uncomment to use):\n# [[plugins]]\n# name = "x"\n\n'
+        '# Build output\n[build]\nout = "dist"\n'
+    )
+    for sub in ("plug-b", "plug-c"):
+        assert main([*S, "plugin", "add", mono.url, "--path", sub, "--no-sync"]) == 0
+    text = toml.read_text()
+
+    def block(sub: str) -> str:
+        return (f'[[plugins]]\nname   = "{sub}"\nrepo   = "{mono.url}"\n'
+                f'path   = "{sub}"\nactive = true\n')  # fmt: skip
+
+    assert (
+        '[[plugins]]\nname = "site-branding"\n# (overlay/user/plugins/site-branding)\n\n'
+        + block("plug-b")
+        + "\n"
+        + block("plug-c")
+        + '\n# Example (uncomment to use):\n# [[plugins]]\n# name = "x"\n\n# Build output\n[build]'
+    ) in text
+
+
 @pytest.mark.parametrize(
     ("url", "expected"),
     [

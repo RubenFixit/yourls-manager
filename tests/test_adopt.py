@@ -14,6 +14,7 @@ import pytest
 from yourls_manager import adopt as adopt_mod
 from yourls_manager.cli import main
 from yourls_manager.config import load_site
+from yourls_manager.plugincmd import insert_plugin_blocks
 
 from .conftest import (
     YOURLS_CORE_URL,
@@ -89,28 +90,31 @@ out = "dist"
 """
 
 
-def test_append_plugin_blocks_keeps_comments(tmp_path):
+def test_insert_plugin_blocks_keeps_comments(tmp_path):
     f = tmp_path / "site.toml"
     f.write_text(SITE_TOML.format(core="x", version="1.0.0", targets=""))
     d = adopt_mod.PluginDecision("custom", "custom", None, "overlay", True, "https://e/x")
     b = adopt_mod.PluginDecision("hyphens-in-urls", "bundled", True, "none", True)
-    adopt_mod.append_plugin_blocks(f, [adopt_mod.plugin_block(d), adopt_mod.plugin_block(b)])
+    insert_plugin_blocks(f, [adopt_mod.plugin_block(d), adopt_mod.plugin_block(b)])
     text = f.read_text()
     data = tomllib.loads(text)
     assert [p["name"] for p in data["plugins"]] == ["site-branding", "custom", "hyphens-in-urls"]
     assert data["plugins"][1]["active"] is True and "repo" not in data["plugins"][1]
     assert "# keep this comment" in text and "# header comment" in text
     assert text.index("# Plugin URI: https://e/x") < text.index("[build]")
-    assert text.index('name   = "404-if-not-found"') < text.index('name   = "custom"')
+    # right after site-branding: the commented-out examples stay below the real entries
+    assert text.index('name   = "site-branding"') < text.index("# Adopted by `ym adopt`")
+    assert text.index('name   = "hyphens-in-urls"') < text.index("# Example (uncomment to use)")
+    assert "active = true\n\n# Example (uncomment to use)" in text
     assert "active = true   # TODO verify" in text
     assert text.count("TODO verify") == 1
 
 
-def test_append_plugin_blocks_no_plugins_table(tmp_path):
+def test_insert_plugin_blocks_no_plugins_table(tmp_path):
     f = tmp_path / "site.toml"
     f.write_text('[site]\nname="x"\n[core]\nversion="1"')
     d = adopt_mod.PluginDecision("p", "custom", False, "overlay", True)
-    adopt_mod.append_plugin_blocks(f, [adopt_mod.plugin_block(d)])
+    insert_plugin_blocks(f, [adopt_mod.plugin_block(d)])
     assert tomllib.loads(f.read_text())["plugins"] == [{"name": "p", "active": False}]
 
 

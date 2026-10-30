@@ -254,7 +254,7 @@ ym plugin add [--name NAME] [--ref REF] [--path PATH]
               NAME|URL
 ```
 
-Add a plugin by its awesome-yourls catalog name (exact, case-insensitive or unique prefix; quote names with spaces) or by a clone URL / project page (GitHub, GitLab, Codeberg, Bitbucket; /tree/<ref>/<dir> sets ref and path). plugin.php is looked for at the top of the repo, else one directory down (several: asks on a terminal, else needs --path). Shows the plugin header, appends a [[plugins]] block to site.toml and vendors it. Refuses duplicates and directory names used by core or overlay/. Catalog entries that link to a web page need the repo URL instead.
+Add a plugin by its awesome-yourls catalog name (exact, case-insensitive or unique prefix; quote names with spaces) or by a clone URL / project page (GitHub, GitLab, Codeberg, Bitbucket; /tree/<ref>/<dir> sets ref and path). plugin.php is looked for at the top of the repo, else one directory down (several: asks on a terminal, else needs --path). Shows the plugin header, adds a [[plugins]] block to site.toml after the last one and vendors it. Refuses duplicates and directory names used by core or overlay/. Catalog entries that link to a web page need the repo URL instead.
 
 **Positional arguments**
 
