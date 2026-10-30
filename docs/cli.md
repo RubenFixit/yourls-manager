@@ -35,8 +35,8 @@ exit codes:
 | [`ym release`](#ym-release) | tag a release: v<yourls>-<rev>[-rc.<n>]; list, promote |
 | [`ym artifact`](#ym-artifact) | release archives for sites ym doesn't deploy: build |
 | [`ym doctor`](#ym-doctor) | read-only health report: tools, site repo, targets (exit 1 on failures) |
-| [`ym repo`](#ym-repo) | store the site on GitHub (create the repo, push) |
-| [`ym ci`](#ym-ci) | deploy from GitHub Actions (opt-in per target): setup, status |
+| [`ym repo`](#ym-repo) | store the site on GitHub or GitLab (create the repo/project, push) |
+| [`ym ci`](#ym-ci) | deploy from GitHub Actions or GitLab CI (opt-in per target): setup, status |
 | [`ym target`](#ym-target) | deploy targets: add, list, log in, write the server-local config |
 | [`ym new`](#ym-new) | create a site repo from the template (copier), vendor core + plugins, git init |
 | [`ym template`](#ym-template) | the site template (yourls-site-template): update |
@@ -455,7 +455,7 @@ Check local tools, site.toml, the lock and drift, uncommitted and unpushed chang
 
 ## ym repo
 
-Store the site on GitHub (create the repo, push).
+Store the site on GitHub or GitLab (create the repo/project, push).
 
 ```
 ym repo ACTION ...
@@ -463,31 +463,32 @@ ym repo ACTION ...
 
 | Command | Description |
 |---|---|
-| `ym repo create` | create the site's GitHub repo as origin and push the current branch (needs gh) |
+| `ym repo create` | create the site's repo as origin and push the current branch (needs gh or glab) |
 
 ### ym repo create
 
-Create the site's GitHub repo as origin and push the current branch (needs gh).
+Create the site's repo as origin and push the current branch (needs gh or glab).
 
 ```
-ym repo create [--name NAME] [--owner OWNER] [--public]
-               [--dry-run]
+ym repo create [--name NAME] [--owner OWNER] [--host HOST]
+               [--public] [--dry-run]
 ```
 
-Create a GitHub repository for this site with the GitHub CLI (private unless --public), add it as origin (or create the one origin already names), and push the current branch. Tags are not pushed. Nothing about deploying changes: that stays manual unless you run `ym ci setup`. GitHub only: on a ci_provider = gitlab site it refuses and points to the site README.
+Create a repository for this site (private unless --public), add it as origin (or create the one origin already names), and push the current branch. Tags are not pushed. Nothing about deploying changes: that stays manual unless you run `ym ci setup`. Where: GitHub with the GitHub CLI (gh), or GitLab with the GitLab CLI (glab) on sites made with ci_provider = gitlab; there the project comes from origin, else the template's repo_url answer, else --host/--owner/--name, and self-managed GitLab works through --host.
 
 **Options**
 
 | Option | Description |
 |---|---|
 | `--name NAME` | repository name (default: the site directory name) |
-| `--owner OWNER` | user or organization (default: your gh login) |
+| `--owner OWNER` | user, organization or group path (default: your login) |
+| `--host HOST` | GitLab host (default: gitlab.com; GitLab sites only) |
 | `--public` | create it public (default: private) |
 | `--dry-run` | show what would be created |
 
 ## ym ci
 
-Deploy from GitHub Actions (opt-in per target): setup, status.
+Deploy from GitHub Actions or GitLab CI (opt-in per target): setup, status.
 
 ```
 ym ci ACTION ...
@@ -495,19 +496,20 @@ ym ci ACTION ...
 
 | Command | Description |
 |---|---|
-| `ym ci setup` | enable GitHub Actions deploys: environment, CI key, host keys, ci = true |
-| `ym ci status` | check the GitHub environments and secrets of ci = true targets (exit 1 if not ready) |
+| `ym ci setup` | enable CI deploys: environment, CI key, host keys, ci = true (gh or glab) |
+| `ym ci status` | check the CI environments and secrets of ci = true targets (exit 1 if not ready) |
 
 ### ym ci setup
 
-Enable GitHub Actions deploys: environment, CI key, host keys, ci = true.
+Enable CI deploys: environment, CI key, host keys, ci = true (gh or glab).
 
 ```
-ym ci setup [--repo OWNER/NAME] [--rotate] [--dry-run]
+ym ci setup [--repo OWNER/NAME] [--rotate] [--skip-updates]
+            [--dry-run]
             [TARGET ...]
 ```
 
-Enable deploys from the site's .github/workflows/deploy.yml with the GitHub CLI: create the environment (prod -> production, other targets -> staging), generate a dedicated CI key, install it on the server over your working login, check it logs in, store it as DEPLOY_SSH_KEY, store the host keys from ~/.ssh/known_hosts as DEPLOY_KNOWN_HOSTS, and set `ci = true` on the target in site.toml. Offers `gh auth login`, and `ym repo create` when the site has no GitHub repo yet. GitHub only: refuses on ci_provider = gitlab (see the site README) or none.
+Enable deploys from the site template's CI file (.github/workflows/deploy.yml with the GitHub CLI, or .gitlab-ci.yml with the GitLab CLI on ci_provider = gitlab sites): create the environment (prod -> production, other targets -> staging), generate a dedicated CI key, install it on the server over your working login, check it logs in, store it as DEPLOY_SSH_KEY, store the host keys from ~/.ssh/known_hosts as DEPLOY_KNOWN_HOSTS, and set `ci = true` on the target in site.toml. GitLab: File-type, protected variables scoped to the environment, and the v* tags are protected. Offers the CLI's login, and `ym repo create` when the site has no repository yet. GitLab also sets up check-updates (unless --skip-updates): the weekly pipeline schedule `ym check-updates` and the masked variable YM_UPDATE_TOKEN the job pushes with (a project access token; when GitLab refuses to create one, e.g. on a free gitlab.com namespace, it asks you to paste a token with write_repository). This works without deploy targets, e.g. on artifact-only sites.
 
 **Positional arguments**
 
@@ -519,20 +521,21 @@ Enable deploys from the site's .github/workflows/deploy.yml with the GitHub CLI:
 
 | Option | Description |
 |---|---|
-| `--repo OWNER/NAME` | GitHub repo (default: from the remote) |
-| `--rotate` | replace an existing DEPLOY_SSH_KEY |
+| `--repo OWNER/NAME` | GitHub repo or GitLab project (default: from the remote) |
+| `--rotate` | replace an existing DEPLOY_SSH_KEY (and YM_UPDATE_TOKEN) |
+| `--skip-updates` | GitLab: don't set up the check-updates schedule and token |
 | `--dry-run` | show what would be set, change nothing |
 
 ```
 examples:
   ym ci setup                 # prod, staging and targets with ci = true
   ym ci setup prod --dry-run
-  ym ci setup prod --rotate   # replace the CI key
+  ym ci setup prod --rotate   # replace the CI key (and offer to remove the old one)
 ```
 
 ### ym ci status
 
-Check the GitHub environments and secrets of ci = true targets (exit 1 if not ready).
+Check the CI environments and secrets of ci = true targets (exit 1 if not ready).
 
 ```
 ym ci status [TARGET ...]

@@ -392,17 +392,6 @@ def test_real_key_and_fingerprints(tmp_path):
 # --------------------------------------------------------------------------- ci_provider
 
 
-def test_gitlab_site_refuses_github_commands(site, fake_gh, capsys):
-    (site / ".copier-answers.yml").write_text("_commit: v0.7.0\nci_provider: gitlab\n")
-    S = ["--site-dir", str(site)]
-    for argv in (["repo", "create"], ["ci", "setup", "prod"], ["ci", "status"]):
-        assert main([*S, *argv]) == 2
-        err = capsys.readouterr().err
-        assert f"`ym {' '.join(argv[:2])}` works with GitHub only" in err
-        assert '"GitLab CI" in the site README' in err
-    assert fake_gh.load()["calls"] == []  # refused before gh runs
-
-
 def test_no_ci_site_refuses_ci_but_may_create_repo(site, fake_gh, capsys):
     (site / ".copier-answers.yml").write_text("ci_provider: none\n")
     S = ["--site-dir", str(site)]
@@ -417,7 +406,6 @@ def test_doctor_ci_line_follows_provider(site, capsys):
 
     cfg = load_site(site)
     for answers, expect in (
-        ("ci_provider: gitlab\n", "ok    ci: GitLab CI"),
         ("ci_provider: 'none'\n", "warn  ci: ci = true, but ci_provider = 'none'"),
     ):
         (site / ".copier-answers.yml").write_text(answers)

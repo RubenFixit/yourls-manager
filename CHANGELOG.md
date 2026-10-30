@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+GitLab support for the repo and CI commands, tested against a fake `glab` and a fake GitLab API server; the setup it automates was first done by hand on gitlab.com with a real site.
+
+### Added
+
+- GitLab: `ym repo create`, `ym ci setup` and `ym ci status` work on sites made with the template's `ci_provider = gitlab`, for gitlab.com and self-managed GitLab. glab (the GitLab CLI) owns the login: ym offers `glab auth login` and uses glab's token (from `GITLAB_TOKEN`, glab's config, or its keyring via `glab auth status --show-token`) and `api_host` / `api_protocol`, and retries once after letting glab refresh an expired OAuth token. The API calls go through python-gitlab, a new runtime dependency imported only by these commands.
+  - `ym repo create` creates the project from `origin`, else the template's `repo_url` answer, else `--host` (new) / `--owner` / `--name` (groups and subgroups work), adds `origin` (SSH, or HTTPS when glab's `git_protocol` is https) and pushes the current branch.
+  - `ym ci setup` creates the `production` / `staging` environments, stores `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS` as File-type, protected, environment-scoped variables, protects the `v*` tags, and sets `ci = true` like on GitHub. It also sets up check-updates (unless `--skip-updates`, new), with or without deploy targets: the `ym check-updates` pipeline schedule and the masked `YM_UPDATE_TOKEN` variable, from a new project access token or, where GitLab refuses to create one, a token you paste (hidden prompt).
+  - `ym ci status` and `ym doctor` check the environments, variables and protected tags of `ci = true` targets on GitLab (instead of reporting "GitLab CI (not checked)"); `ym ci status` also reports the check-updates schedule and token.
+- `ym ci setup --rotate` offers (on a terminal) to remove the environment's previous CI keys (`ym-ci-<slug>-<env>-*`) from the server's `authorized_keys`, over ssh or SFTP. GitHub and GitLab.
+
+### Fixed
+
+- Tests that only run with a real sshd (`ym plugins` instead of `ym plugin apply`, an old `target login` message) or outside UTC (artifact metadata time) were out of date.
+
 ## [0.8.1] - 2026-10-30
 
 ### Added

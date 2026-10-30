@@ -317,38 +317,33 @@ def _deployed_check(rep: Report, cfg: SiteConfig, spec: TargetSpec, rel: dict | 
         rep.add(WARN, "deployed", what + extra, f"ym deploy {spec.name}")
 
 
-def _ci_checks(rep: Report, cfg: SiteConfig, spec: TargetSpec, github: dict) -> None:
-    """Only for targets with ci = true: the GitHub side of the deploy workflow."""
-    from .ci import ci_check, environment_for
-    from .github import Gh, current_repo, gh_logged_in
+def _ci_checks(rep: Report, cfg: SiteConfig, spec: TargetSpec, cache: dict) -> None:
+    """Only for targets with ci = true: the CI side (GitHub or GitLab) of the deploy job."""
+    from .ci import ci_check, environment_for, status_forge
 
     provider = ci_provider(cfg.root)
-    if provider == "gitlab":
-        rep.add(OK, "ci", "GitLab CI (ym doesn't check its environments and variables)")
-        return
-    if provider != "github":
+    if provider not in ("github", "gitlab"):
         rep.add(WARN, "ci", f"ci = true, but ci_provider = {provider!r}: nothing deploys it",
                 "ym template update --data ci_provider=github (or gitlab)")  # fmt: skip
         return
-
-    if "repo" not in github:
-        gh = Gh(cwd=cfg.root)
-        github["gh"] = gh
-        github["repo"] = current_repo(gh) if gh_logged_in(gh) else False
-    repo = github["repo"]
-    if repo is False:
-        rep.add(WARN, "ci", "can't check GitHub (gh not installed or not logged in)",
-                "gh auth login")  # fmt: skip
+    if "forge" not in cache:
+        cache["forge"] = status_forge(cfg)
+        cache["shared"] = None
+    forge = cache["forge"]
+    if isinstance(forge, str):
+        reason, _, hint = forge.partition(": ")
+        rep.add(WARN if reason.startswith("can't check") else FAIL, "ci",
+                reason.replace("this site", "ci = true but this site"), hint)  # fmt: skip
         return
-    if repo is None:
-        rep.add(FAIL, "ci", "ci = true but this site has no GitHub repository", "ym repo create")
-        return
-    res = ci_check(cfg, spec, github["gh"], repo)
+    if cache["shared"] is None:
+        cache["shared"] = forge.target_problems()
+    res = ci_check(cfg, spec, forge)
+    problems = res.problems + cache["shared"]
     env = environment_for(spec.name)
-    if res.ok:
-        rep.add(OK, "ci", f"{repo}: environment {env!r} has both secrets")
+    if not problems:
+        rep.add(OK, "ci", f"{forge.where}: environment {env!r} has both secrets")
     else:
-        rep.add(FAIL, "ci", f"{repo}: " + "; ".join(res.problems), f"ym ci setup {spec.name}")
+        rep.add(FAIL, "ci", f"{forge.where}: " + "; ".join(problems), f"ym ci setup {spec.name}")
 
 
 def check_target(rep: Report, cfg: SiteConfig, spec: TargetSpec, github: dict | None = None

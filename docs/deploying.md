@@ -80,7 +80,7 @@ git commit -m "Deploy from GitHub Actions" site.toml && git push
 ym ci status                        # environments and secrets of the ci = true targets
 ```
 
-`ym ci setup` creates the environment if needed, generates a dedicated CI key (ed25519, no passphrase), installs its public half on the server over your working login (ssh, or SFTP for `sftp` targets), checks that it logs in, and stores the private half only in `DEPLOY_SSH_KEY`. The host keys come from your `~/.ssh/known_hosts` (else `ssh-keyscan`, with the fingerprints to confirm). Last, it sets `ci = true` on the target; commit that, since the workflow reads it from the commit it deploys. Run it again any time: it keeps the key (`--rotate` replaces it, leaving the old one authorized) and refreshes the host keys; `--dry-run` shows what it would do.
+`ym ci setup` creates the environment if needed, generates a dedicated CI key (ed25519, no passphrase), installs its public half on the server over your working login (ssh, or SFTP for `sftp` targets), checks that it logs in, and stores the private half only in `DEPLOY_SSH_KEY`. The host keys come from your `~/.ssh/known_hosts` (else `ssh-keyscan`, with the fingerprints to confirm). Last, it sets `ci = true` on the target; commit that, since the workflow reads it from the commit it deploys. Run it again any time: it keeps the key and refreshes the host keys; `--rotate` replaces the key and offers to remove the environment's previous CI keys (`ym-ci-<slug>-<environment>-*`) from the server's `authorized_keys`; `--dry-run` shows what it would do.
 
 Or by hand: set `ci = true` on the target, and under Settings → Environments → production:
 
@@ -95,7 +95,18 @@ For sftp targets the key must be authorized for the SFTP account.
 
 ### GitLab CI
 
-`.gitlab-ci.yml` has the same jobs: deploy on release tags for `ci = true` targets (`production` for prod, `staging` for others), a scheduled `check-updates` job that opens a merge request, and the artifact publish job. `ym repo create` and `ym ci` are GitHub-only; the site README's "GitLab CI" section lists the manual setup: protected `v*` tags, the `production` / `staging` environments with File-type variables `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS`, and a pipeline schedule plus a `YM_UPDATE_TOKEN` project access token for update merge requests.
+`.gitlab-ci.yml` has the same jobs: deploy on release tags for `ci = true` targets (`production` for prod, `staging` for others), a scheduled `check-updates` job that opens a merge request, the artifact publish job, and a `check` job (`ym doctor --local`, `ym build`) on merge requests and branch pushes. With the [GitLab CLI](https://gitlab.com/gitlab-org/cli) (`glab`) logged in, ym sets the project up the same way as on GitHub:
+
+```sh
+ym repo create                      # the project from origin / repo_url, or --host --owner --name
+ym ci setup                         # prod and staging, plus check-updates; offers `glab auth login`
+git commit -m "Deploy from GitLab CI" site.toml && git push
+ym ci status                        # environments, variables, protected tags, check-updates
+```
+
+On GitLab, `ym ci setup` stores `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS` as File-type, protected CI/CD variables scoped to the environment, and protects the `v*` tags (protected variables only reach pipelines of protected refs, and only maintainers can then create release tags). It also sets up `check-updates`, with or without deploy targets (so artifact-only sites get it too): the pipeline schedule `ym check-updates` (Mondays 05:23 UTC; change it under Build → Pipeline schedules) and the masked variable `YM_UPDATE_TOKEN` the job pushes with. ym creates a project access token for it (Developer, `write_repository`, valid for a year: run `ym ci setup --rotate` before it expires); where GitLab refuses (project access tokens may need a paid tier on gitlab.com), it asks you to paste a personal or group access token with `write_repository`. `--skip-updates` leaves check-updates out. ym never asks for or stores GitLab credentials: glab owns the login (ym offers `glab auth login` and reads glab's token, from `GITLAB_TOKEN`, glab's config or its keyring), and ym makes the API calls with [python-gitlab](https://python-gitlab.readthedocs.io/) using that token. Self-managed GitLab works: the host comes from `origin` (or `repo_url`, or `--host`), and glab's `api_host` / `api_protocol` settings for it apply.
+
+By hand, the site README's "GitLab CI" section lists the same settings.
 
 ## Rollback
 

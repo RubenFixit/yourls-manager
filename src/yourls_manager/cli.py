@@ -353,61 +353,76 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser(
         "repo",
         parents=[common],
-        help="store the site on GitHub (create the repo, push)",
+        help="store the site on GitHub or GitLab (create the repo/project, push)",
     )
     rsub = p.add_subparsers(dest="repo_cmd", metavar="ACTION", required=True)
     q = rsub.add_parser(
         "create",
         parents=[common],
-        help="create the site's GitHub repo as origin and push the current branch (needs gh)",
+        help="create the site's repo as origin and push the current branch (needs gh or glab)",
         description=(
-            "Create a GitHub repository for this site with the GitHub CLI (private unless"
-            " --public), add it as origin (or create the one origin already names), and push"
-            " the current branch. Tags are not pushed. Nothing about deploying changes: that"
-            " stays manual unless you run `ym ci setup`. GitHub only: on a ci_provider ="
-            " gitlab site it refuses and points to the site README."
+            "Create a repository for this site (private unless --public), add it as origin"
+            " (or create the one origin already names), and push the current branch. Tags"
+            " are not pushed. Nothing about deploying changes: that stays manual unless you"
+            " run `ym ci setup`. Where: GitHub with the GitHub CLI (gh), or GitLab with the"
+            " GitLab CLI (glab) on sites made with ci_provider = gitlab; there the project"
+            " comes from origin, else the template's repo_url answer, else --host/--owner/"
+            "--name, and self-managed GitLab works through --host."
         ),
     )
     q.add_argument("--name", help="repository name (default: the site directory name)")
-    q.add_argument("--owner", help="user or organization (default: your gh login)")
+    q.add_argument("--owner", help="user, organization or group path (default: your login)")
+    q.add_argument("--host", help="GitLab host (default: gitlab.com; GitLab sites only)")
     q.add_argument("--public", action="store_true", help="create it public (default: private)")
     q.add_argument("--dry-run", action="store_true", help="show what would be created")
 
     p = sub.add_parser(
         "ci",
         parents=[common],
-        help="deploy from GitHub Actions (opt-in per target): setup, status",
+        help="deploy from GitHub Actions or GitLab CI (opt-in per target): setup, status",
     )
     csub = p.add_subparsers(dest="ci_cmd", metavar="ACTION", required=True)
     q = csub.add_parser(
         "setup",
         parents=[common],
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        help="enable GitHub Actions deploys: environment, CI key, host keys, ci = true",
+        help="enable CI deploys: environment, CI key, host keys, ci = true (gh or glab)",
         description=(
-            "Enable deploys from the site's .github/workflows/deploy.yml with the GitHub CLI:\n"
-            "create the environment (prod -> production, other targets -> staging), generate\n"
-            "a dedicated CI key, install it on the server over your working login, check it\n"
-            "logs in, store it as DEPLOY_SSH_KEY, store the host keys from ~/.ssh/known_hosts\n"
-            "as DEPLOY_KNOWN_HOSTS, and set `ci = true` on the target in site.toml. Offers\n"
-            "`gh auth login`, and `ym repo create` when the site has no GitHub repo yet.\n"
-            "GitHub only: refuses on ci_provider = gitlab (see the site README) or none."
+            "Enable deploys from the site template's CI file (.github/workflows/deploy.yml\n"
+            "with the GitHub CLI, or .gitlab-ci.yml with the GitLab CLI on ci_provider =\n"
+            "gitlab sites): create the environment (prod -> production, other targets ->\n"
+            "staging), generate a dedicated CI key, install it on the server over your working\n"
+            "login, check it logs in, store it as DEPLOY_SSH_KEY, store the host keys from\n"
+            "~/.ssh/known_hosts as DEPLOY_KNOWN_HOSTS, and set `ci = true` on the target in\n"
+            "site.toml. GitLab: File-type, protected variables scoped to the environment, and\n"
+            "the v* tags are protected. Offers the CLI's login, and `ym repo create` when the\n"
+            "site has no repository yet.\n"
+            "\n"
+            "GitLab also sets up check-updates (unless --skip-updates): the weekly pipeline\n"
+            "schedule `ym check-updates` and the masked variable YM_UPDATE_TOKEN the job pushes\n"
+            "with (a project access token; when GitLab refuses to create one, e.g. on a free\n"
+            "gitlab.com namespace, it asks you to paste a token with write_repository). This\n"
+            "works without deploy targets, e.g. on artifact-only sites."
         ),
         epilog=(
             "examples:\n"
             "  ym ci setup                 # prod, staging and targets with ci = true\n"
             "  ym ci setup prod --dry-run\n"
-            "  ym ci setup prod --rotate   # replace the CI key"
+            "  ym ci setup prod --rotate   # replace the CI key (and offer to remove the old one)"
         ),
     )
     q.add_argument("targets", nargs="*", metavar="TARGET", help="default: prod and staging")
-    q.add_argument("--repo", metavar="OWNER/NAME", help="GitHub repo (default: from the remote)")
-    q.add_argument("--rotate", action="store_true", help="replace an existing DEPLOY_SSH_KEY")
+    q.add_argument("--repo", metavar="OWNER/NAME",
+                   help="GitHub repo or GitLab project (default: from the remote)")  # fmt: skip
+    q.add_argument("--rotate", action="store_true",
+                   help="replace an existing DEPLOY_SSH_KEY (and YM_UPDATE_TOKEN)")  # fmt: skip
+    q.add_argument("--skip-updates", action="store_true",
+                   help="GitLab: don't set up the check-updates schedule and token")  # fmt: skip
     q.add_argument("--dry-run", action="store_true", help="show what would be set, change nothing")
     q = csub.add_parser(
         "status",
         parents=[common],
-        help="check the GitHub environments and secrets of ci = true targets (exit 1 if not ready)",
+        help="check the CI environments and secrets of ci = true targets (exit 1 if not ready)",
     )
     q.add_argument("targets", nargs="*", metavar="TARGET", help="default: targets with ci = true")
 
@@ -810,10 +825,23 @@ def _dispatch(args: argparse.Namespace) -> int:
 
     if cmd == "repo":
         from .ci import is_tty
+        from .config import ci_provider
+
+        confirm = _confirm if is_tty() else None
+        if ci_provider(cfg.root) == "gitlab":
+            from .gitlab import repo_create as gitlab_repo_create
+
+            gitlab_repo_create(
+                cfg, name=args.name, owner=args.owner, host=args.host, public=args.public,
+                dry_run=args.dry_run, confirm=confirm,
+            )  # fmt: skip
+            return EXIT_OK
         from .github import repo_create
 
+        if args.host:
+            raise UsageError("--host is for GitLab sites (ci_provider = gitlab)")
         repo_create(cfg, name=args.name, owner=args.owner, public=args.public,
-                    dry_run=args.dry_run, confirm=_confirm if is_tty() else None)  # fmt: skip
+                    dry_run=args.dry_run, confirm=confirm)  # fmt: skip
         return EXIT_OK
 
     if cmd == "ci":
@@ -821,8 +849,12 @@ def _dispatch(args: argparse.Namespace) -> int:
 
         if args.ci_cmd == "status":
             return EXIT_OK if ci_status(cfg, args.targets) else EXIT_ERROR
+        import getpass
+
+        tty = is_tty()
         ci_setup(cfg, args.targets, repo=args.repo, rotate=args.rotate, dry_run=args.dry_run,
-                 confirm=_confirm if is_tty() else None)  # fmt: skip
+                 confirm=_confirm if tty else None, ask_secret=getpass.getpass if tty else None,
+                 skip_updates=args.skip_updates)  # fmt: skip
         return EXIT_OK
 
     if cmd == "update" and args.check:

@@ -91,15 +91,16 @@ ym deploy prod                      # backs up the DB, deploys, runs the DB upgr
 
 `ym adopt --from-dir PATH` works on a local copy of the web root instead of a target. For an sftp target, pass the active plugins with `--active a,b,...`; [Onboarding](docs/onboarding.md#ym-adopt) has the details.
 
-### Store the site on GitHub
+### Store the site on GitHub or GitLab
 
-Git is the record of the site, so a remote is optional: deploys run from your machine either way. To keep it on GitHub, with the [GitHub CLI](https://cli.github.com) (`gh`) installed:
+Git is the record of the site, so a remote is optional: deploys run from your machine either way. To keep it on GitHub, with the [GitHub CLI](https://cli.github.com) (`gh`) installed, or on GitLab (sites made with `ci_provider = gitlab`), with the [GitLab CLI](https://gitlab.com/gitlab-org/cli) (`glab`):
 
 ```sh
 ym repo create                      # private, named after the site directory; --name, --owner, --public
+ym repo create --host gitlab.example.com --owner team   # GitLab: self-managed host, group
 ```
 
-It creates the repository, adds it as `origin` (or creates the one `origin` already names) and pushes the current branch. Tags are not pushed; `git push --tags` when you want them. Nothing about deploying changes. By hand: create an empty repository on GitHub (no README or license), then `git remote add origin git@github.com:<you>/my-site.git && git push -u origin main`.
+It creates the repository, adds it as `origin` (or creates the one `origin` already names) and pushes the current branch. On GitLab the project comes from `origin`, else the template's `repo_url` answer, else `--host` / `--owner` / `--name`. Tags are not pushed; `git push --tags` when you want them. Nothing about deploying changes. By hand: create an empty repository (no README or license), then `git remote add origin <its SSH URL> && git push -u origin main`.
 
 To deploy from GitHub Actions or GitLab CI instead of your machine, see [Deploying from CI](docs/deploying.md#deploying-from-ci).
 

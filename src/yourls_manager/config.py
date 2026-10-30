@@ -190,6 +190,21 @@ def ci_provider(root: Path) -> str:
     return m.group(1) if m else "github"
 
 
+def template_answer(root: Path, key: str) -> str | None:
+    """A top-level scalar answer from ``.copier-answers.yml`` (quotes removed), or None."""
+    answers = root / ANSWERS_FILE
+    if not answers.is_file():
+        return None
+    m = re.search(rf"^{re.escape(key)}:[ \t]*(.*?)[ \t]*$", answers.read_text(encoding="utf-8"),
+                  re.MULTILINE)  # fmt: skip
+    if m is None:
+        return None
+    value = m.group(1)
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        value = value[1:-1]
+    return value
+
+
 def find_site_dir(start: Path | None = None) -> Path:
     """Return the nearest directory at or above ``start`` containing site.toml."""
     here = (start or Path.cwd()).resolve()
