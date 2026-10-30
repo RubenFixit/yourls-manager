@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [0.8.1] - 2026-10-30
 
+### Added
+
+- Releases bump the version with `uvx bump-my-version bump patch|minor|major` (`[tool.bumpversion]` in `pyproject.toml`): the package, the PHP helper, the docs example and the changelog heading and links. `.gitattributes` keeps line endings LF, also for tools that write CRLF on Windows.
+
 ### Fixed
 
 - `docs/cli.md` came out differently on Python 3.13 and later (argparse writes `-m, --message MESSAGE` there, `-m MESSAGE, --message MESSAGE` before), so its freshness test failed in CI. The generator now formats option names itself, and turns off Python 3.14's colored help.

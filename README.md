@@ -124,6 +124,14 @@ Tests that need `rsync` or `php` are skipped if those tools are missing. To run 
 
 The SFTP tests (`sftp` marker) start a real OpenSSH server on 127.0.0.1 with an ordinary and a chrooted SFTP-only test account. They need root and `/usr/sbin/sshd` (they create the `ymsftp` / `ymsftponly` users) and are skipped otherwise. Set `YM_TEST_YOURLS_SRC` to a YOURLS checkout to check password hashes with YOURLS' own `yourls_check_password_hash()`.
 
+After changing commands or their help texts, run `uv run python -m yourls_manager.clidoc` to regenerate [`docs/cli.md`](docs/cli.md) (a test fails while it is stale).
+
+To release, on a clean tree:
+
+1. `uvx bump-my-version bump patch` (or `minor`, `major`) sets the new version in `__init__.py`, the PHP helper and `docs/releases.md`, and adds the version heading and compare links to the changelog (configured in `pyproject.toml`).
+2. Fill in the changelog section, then commit as `Release X.Y.Z: <summary>` and tag with `git tag -a vX.Y.Z`.
+3. Push `main` and the tag, then move the template's `manager_version` default to the new tag and release the template.
+
 The site template lives in [`yourls-site-template`](https://github.com/RubenFixit/yourls-site-template).
 
 ## License

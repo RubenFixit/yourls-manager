@@ -68,3 +68,33 @@ markers = [
     "rsync: needs rsync on PATH",
     "sftp: needs root + /usr/sbin/sshd (starts a real OpenSSH server on 127.0.0.1)",
 ]
+
+# Releases: `uvx bump-my-version bump patch|minor|major` updates these files (it fails if one
+# doesn't contain the current version); then fill in the changelog section, commit and tag.
+[tool.bumpversion]
+current_version = "0.8.1"
+commit = false
+tag = false
+
+[[tool.bumpversion.files]]
+filename = "src/yourls_manager/__init__.py"
+
+[[tool.bumpversion.files]]
+filename = "src/yourls_manager/php/ym-helper.php"
+search = "YM_HELPER_VERSION = '{current_version}'"
+replace = "YM_HELPER_VERSION = '{new_version}'"
+
+[[tool.bumpversion.files]]
+filename = "docs/releases.md"
+search = "--manager-version v{current_version}"
+replace = "--manager-version v{new_version}"
+
+[[tool.bumpversion.files]]
+filename = "CHANGELOG.md"
+search = "## [Unreleased]"
+replace = "## [Unreleased]\n\n## [{new_version}] - {now:%Y-%m-%d}"
+
+[[tool.bumpversion.files]]
+filename = "CHANGELOG.md"
+search = "[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v{current_version}...HEAD"
+replace = "[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v{new_version}...HEAD\n[{new_version}]: https://github.com/RubenFixit/yourls-manager/compare/v{current_version}...v{new_version}"
