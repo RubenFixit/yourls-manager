@@ -73,7 +73,7 @@ markers = [
 # Releases: `uvx bump-my-version bump patch|minor|major` updates these files (it fails if one
 # doesn't contain the current version); then fill in the changelog section, commit and tag.
 [tool.bumpversion]
-current_version = "0.8.1"
+current_version = "0.9.0"
 commit = false
 tag = false
 

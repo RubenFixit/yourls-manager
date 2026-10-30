@@ -4,7 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-GitLab support for the repo and CI commands, tested against a fake `glab` and a fake GitLab API server; the setup it automates was first done by hand on gitlab.com with a real site.
+## [0.9.0] - 2026-10-30
+
+GitLab support for the repo and CI commands: glab for the login, python-gitlab for the API. Verified on gitlab.com with a real artifact-only site (check-updates setup, including the project access token).
 
 ### Added
 
@@ -243,7 +245,8 @@ Onboarding commands that work from the globally installed tool, before a site re
 - `ym-helper.php` server-side helper (`info`, `dump`, `upgrade`, `plugins`, `version`) with a JSON-on-stdout contract.
 - Redirect verification from `tests/redirects.toml` plus a JSON health check.
 
-[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/RubenFixit/yourls-manager/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/RubenFixit/yourls-manager/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/RubenFixit/yourls-manager/compare/v0.6.0...v0.7.0
