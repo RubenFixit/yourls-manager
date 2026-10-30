@@ -366,7 +366,7 @@ Without an action: tag the next release v<yourls>-<rev> (--rc: -rc.<n>) on a cle
 | `--rc` | tag a release candidate |
 | `--push` | push the new tag to origin |
 | `--dry-run` | show the tag and notes only |
-| `-m MESSAGE, --message MESSAGE` | extra text for the release notes |
+| `-m, --message MESSAGE` | extra text for the release notes |
 
 | Command | Description |
 |---|---|
@@ -389,7 +389,7 @@ Tag the newest rc's commit as its final release: vX-N-rc.k -> vX-N.
 |---|---|
 | `--push` | push the new tag to origin |
 | `--dry-run` | show the tag and notes only |
-| `-m MESSAGE, --message MESSAGE` | extra text for the release notes |
+| `-m, --message MESSAGE` | extra text for the release notes |
 
 ### ym release list
 

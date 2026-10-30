@@ -41,8 +41,23 @@ def _subcommands(
 
 def _fix_width(parser: argparse.ArgumentParser) -> None:
     parser.formatter_class = functools.partial(argparse.HelpFormatter, width=WIDTH)
+    parser.color = False  # Python 3.14+ colors help text
     for _, _, sub in _subcommands(parser):
         _fix_width(sub)
+
+
+def _invocation(formatter: argparse.HelpFormatter, action: argparse.Action) -> str:
+    """``-m, --message MESSAGE`` on every Python (before 3.13 argparse repeats the metavar)."""
+    if not action.option_strings:
+        if action.metavar is not None:
+            return str(action.metavar)
+        if action.choices is not None:
+            return "{" + ",".join(map(str, action.choices)) + "}"
+        return action.dest
+    names = ", ".join(action.option_strings)
+    if action.nargs == 0:
+        return names
+    return f"{names} {formatter._format_args(action, action.dest.upper())}"
 
 
 def _cell(text: str) -> str:
@@ -59,7 +74,7 @@ def _options(parser: argparse.ArgumentParser, *, skip: set[str]) -> list[str]:
                 continue
             if isinstance(action, argparse._SubParsersAction):
                 continue
-            invocation = formatter._format_action_invocation(action)
+            invocation = _invocation(formatter, action)
             text = formatter._expand_help(action) if action.help else ""
             rows.append(f"| `{_cell(invocation)}` | {_cell(text)} |")
         if rows:
